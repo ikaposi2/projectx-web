@@ -1,0 +1,15 @@
+{
+  "app": {
+    "tagline": "Internal operations for observability and security services",
+    "login": "Sign in",
+    "register": "Create account",
+    "email": "Email",
+    "password": "Password",
+    "fullName": "Full name",
+    "logout": "Sign out",
+    "language": "Language",
+    "welcome": "Welcome, {{name}}",
+    "health": "Identity service",
+    "brandPlaceholder": "Company name will come from configuration"
+  }
+}

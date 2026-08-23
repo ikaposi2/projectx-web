@@ -1,0 +1,135 @@
+:root {
+  --brand-primary: #0b3d2e;
+  --brand-accent: #c4a35a;
+  --bg-deep: #071a14;
+  --bg-mid: #0f2f24;
+  --text: #f3f0e8;
+  --muted: #b7c4bc;
+  --panel: rgba(255, 255, 255, 0.06);
+  --font-display: "Source Serif 4", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #1a5c45 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, #3d2e14 0%, transparent 50%),
+    linear-gradient(160deg, var(--bg-deep), var(--bg-mid) 45%, #0a221a);
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  letter-spacing: 0.02em;
+}
+
+.brand span {
+  color: var(--brand-accent);
+}
+
+.lang {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.lang button,
+.panel button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: var(--text);
+  padding: 0.45rem 0.8rem;
+}
+
+.lang button.active,
+.panel button.primary {
+  background: var(--brand-accent);
+  color: #1a1408;
+  border-color: var(--brand-accent);
+}
+
+.hero {
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.panel {
+  width: min(420px, 100%);
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  padding: 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel h1 {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  margin: 0 0 0.35rem;
+}
+
+.panel p {
+  color: var(--muted);
+  margin: 0 0 1.25rem;
+}
+
+.panel label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+}
+
+.panel input {
+  width: 100%;
+  margin-bottom: 0.9rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.status {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.error {
+  color: #ffb4a8;
+}

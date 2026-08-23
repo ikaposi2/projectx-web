@@ -1,0 +1,15 @@
+{
+  "app": {
+    "tagline": "Interne operations voor observability- en securitydiensten",
+    "login": "Inloggen",
+    "register": "Account aanmaken",
+    "email": "E-mail",
+    "password": "Wachtwoord",
+    "fullName": "Volledige naam",
+    "logout": "Uitloggen",
+    "language": "Taal",
+    "welcome": "Welkom, {{name}}",
+    "health": "Identity-service",
+    "brandPlaceholder": "Bedrijfsnaam volgt via configuratie"
+  }
+}
