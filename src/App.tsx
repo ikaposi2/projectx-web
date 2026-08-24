@@ -375,6 +375,55 @@ export default function App() {
   const displayName = brand?.display_name ?? "Platform";
   const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
 
+  function dayClass(index: number): string {
+    return index >= 5 ? "day-off" : "day-normal";
+  }
+
+  function hoursInput(row: GridRow, date: string, dayIndex: number) {
+    const key = `${row.id}|${date}`;
+    const entry = entryByKey.get(key);
+    const locked = entry?.status === "approved";
+    return (
+      <td key={date} className={dayClass(dayIndex)}>
+        <input
+          className={locked ? "hours-cell approved" : "hours-cell"}
+          type="number"
+          min={0}
+          max={24}
+          step={0.25}
+          inputMode="decimal"
+          aria-label={`${row.label} ${date}`}
+          value={draftHours[key] ?? ""}
+          disabled={locked || savingCell === key}
+          title={locked ? t("time.approvedCell") : undefined}
+          onFocus={() => {
+            if (locked) return;
+            const current = draftHours[key];
+            if (current === undefined || current.trim() === "") {
+              setDraftHours((prev) => ({ ...prev, [key]: "8" }));
+            }
+          }}
+          onChange={(e) => setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))}
+          onBlur={(e) => void persistCell(row, date, e.target.value)}
+        />
+      </td>
+    );
+  }
+
+  function projectRows(kind: "billable" | "non_billable") {
+    return rows
+      .filter((r) => r.classification === kind)
+      .map((row) => (
+        <tr key={row.id}>
+          <th scope="row">
+            <span className="row-label">{row.label}</span>
+            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
+          </th>
+          {weekDates.map((date, i) => hoursInput(row, date, i))}
+        </tr>
+      ));
+  }
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -482,7 +531,7 @@ export default function App() {
                     <tr>
                       <th scope="col">{t("time.hours")}</th>
                       {DAY_KEYS.map((day, i) => (
-                        <th key={day} scope="col">
+                        <th key={day} scope="col" className={dayClass(i)}>
                           <span className="day-name">{t(`time.days.${day}`)}</span>
                           <span className="day-date">{weekDates[i].slice(8)}</span>
                         </th>
@@ -495,85 +544,19 @@ export default function App() {
                         <td colSpan={8}>{t("time.billableProjects")}</td>
                       </tr>
                     )}
-                    {rows
-                      .filter((r) => r.classification === "billable")
-                      .map((row) => (
-                        <tr key={row.id}>
-                          <th scope="row">
-                            <span className="row-label">{row.label}</span>
-                            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
-                          </th>
-                          {weekDates.map((date) => {
-                            const key = `${row.id}|${date}`;
-                            const entry = entryByKey.get(key);
-                            const locked = entry?.status === "approved";
-                            return (
-                              <td key={date}>
-                                <input
-                                  className={locked ? "hours-cell approved" : "hours-cell"}
-                                  type="number"
-                                  min={0}
-                                  max={24}
-                                  step={0.25}
-                                  inputMode="decimal"
-                                  aria-label={`${row.label} ${date}`}
-                                  value={draftHours[key] ?? ""}
-                                  disabled={locked || savingCell === key}
-                                  title={locked ? t("time.approvedCell") : undefined}
-                                  onChange={(e) =>
-                                    setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))
-                                  }
-                                  onBlur={(e) => void persistCell(row, date, e.target.value)}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
+                    {projectRows("billable")}
                     {budgets.length > 0 && (
                       <tr className="section-row">
                         <td colSpan={8}>{t("time.internalBudgets")}</td>
                       </tr>
                     )}
-                    {rows
-                      .filter((r) => r.classification === "non_billable")
-                      .map((row) => (
-                        <tr key={row.id}>
-                          <th scope="row">
-                            <span className="row-label">{row.label}</span>
-                            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
-                          </th>
-                          {weekDates.map((date) => {
-                            const key = `${row.id}|${date}`;
-                            const entry = entryByKey.get(key);
-                            const locked = entry?.status === "approved";
-                            return (
-                              <td key={date}>
-                                <input
-                                  className={locked ? "hours-cell approved" : "hours-cell"}
-                                  type="number"
-                                  min={0}
-                                  max={24}
-                                  step={0.25}
-                                  inputMode="decimal"
-                                  aria-label={`${row.label} ${date}`}
-                                  value={draftHours[key] ?? ""}
-                                  disabled={locked || savingCell === key}
-                                  title={locked ? t("time.approvedCell") : undefined}
-                                  onChange={(e) =>
-                                    setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))
-                                  }
-                                  onBlur={(e) => void persistCell(row, date, e.target.value)}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
+                    {projectRows("non_billable")}
                     <tr className="totals-row">
                       <th scope="row">{t("time.dayTotal")}</th>
                       {dayTotals.map((total, i) => (
-                        <td key={weekDates[i]}>{total > 0 ? total : "—"}</td>
+                        <td key={weekDates[i]} className={dayClass(i)}>
+                          {total > 0 ? total : "—"}
+                        </td>
                       ))}
                     </tr>
                   </tbody>
