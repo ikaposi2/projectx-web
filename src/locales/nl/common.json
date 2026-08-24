@@ -53,5 +53,18 @@
       "approved": "goedgekeurd",
       "rejected": "geweigerd"
     }
+  },
+  "customer": {
+    "title": "Klanten",
+    "intro": "Beheer klantrecords. Projecten koppelen we later aan deze IDs.",
+    "name": "Klantnaam",
+    "add": "Toevoegen",
+    "empty": "Nog geen klanten.",
+    "deactivate": "Deactiveren",
+    "status": {
+      "prospect": "prospect",
+      "active": "actief",
+      "inactive": "inactief"
+    }
   }
 }

@@ -57,6 +57,13 @@ const API = "/api/identity";
 const TIME_API = "/api/time";
 const PROJECT_API = "/api/project";
 const PARTNER_API = "/api/partner";
+const CUSTOMER_API = "/api/customer";
+
+type Customer = {
+  id: string;
+  name: string;
+  status: "prospect" | "active" | "inactive";
+};
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
@@ -102,6 +109,9 @@ export default function App() {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [projects, setProjects] = useState<BookableProject[]>([]);
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [customerError, setCustomerError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
@@ -190,6 +200,20 @@ export default function App() {
       });
   }, [token]);
 
+  const loadCustomers = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${CUSTOMER_API}/customers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setCustomers((await res.json()) as Customer[]);
+      setCustomerError(null);
+    } catch (err) {
+      setCustomerError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
   const loadBookable = useCallback(async () => {
     if (!token) return;
     try {
@@ -231,8 +255,9 @@ export default function App() {
     if (user && token) {
       void loadBookable();
       void loadEntries();
+      void loadCustomers();
     }
-  }, [user, token, loadBookable, loadEntries]);
+  }, [user, token, loadBookable, loadEntries, loadCustomers]);
 
   useEffect(() => {
     setDraftHours((prev) => {
@@ -291,6 +316,7 @@ export default function App() {
     setEntries([]);
     setProjects([]);
     setBudgets([]);
+    setCustomers([]);
   }
 
   async function persistCell(row: GridRow, date: string, raw: string) {
@@ -365,6 +391,48 @@ export default function App() {
       setDraftHours((prev) => ({ ...prev, [key]: entry ? String(entry.hours) : "" }));
     } finally {
       setSavingCell(null);
+    }
+  }
+
+  async function createCustomer(e: FormEvent) {
+    e.preventDefault();
+    if (!token || !newCustomerName.trim()) return;
+    setCustomerError(null);
+    try {
+      const res = await fetch(`${CUSTOMER_API}/customers`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: newCustomerName.trim(), status: "active" }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? res.statusText);
+      }
+      setNewCustomerName("");
+      await loadCustomers();
+    } catch (err) {
+      setCustomerError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function deactivateCustomer(id: string) {
+    if (!token) return;
+    setCustomerError(null);
+    try {
+      const res = await fetch(`${CUSTOMER_API}/customers/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? res.statusText);
+      }
+      await loadCustomers();
+    } catch (err) {
+      setCustomerError(err instanceof Error ? err.message : "error");
     }
   }
 
@@ -573,6 +641,46 @@ export default function App() {
               <p className="status">
                 {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
               </p>
+            </section>
+
+            <section className="panel wide">
+              <h2>{t("customer.title")}</h2>
+              <p className="status">{t("customer.intro")}</p>
+              <form className="customer-form" onSubmit={(e) => void createCustomer(e)}>
+                <label htmlFor="customerName">{t("customer.name")}</label>
+                <div className="actions">
+                  <input
+                    id="customerName"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                    required
+                    maxLength={200}
+                  />
+                  <button className="primary" type="submit">
+                    {t("customer.add")}
+                  </button>
+                </div>
+              </form>
+              {customerError && <p className="status error">{customerError}</p>}
+              {customers.length === 0 ? (
+                <p className="status">{t("customer.empty")}</p>
+              ) : (
+                <ul className="entry-list">
+                  {customers.map((customer) => (
+                    <li key={customer.id}>
+                      <div>
+                        <strong>{customer.name}</strong>
+                        <span className="muted"> — {t(`customer.status.${customer.status}`)}</span>
+                      </div>
+                      {customer.status !== "inactive" ? (
+                        <button type="button" onClick={() => void deactivateCustomer(customer.id)}>
+                          {t("customer.deactivate")}
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <section className="panel wide timesheet">

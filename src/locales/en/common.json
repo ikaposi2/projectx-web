@@ -53,5 +53,18 @@
       "approved": "approved",
       "rejected": "rejected"
     }
+  },
+  "customer": {
+    "title": "Customers",
+    "intro": "Manage customer records. Projects will link to these IDs later.",
+    "name": "Customer name",
+    "add": "Add",
+    "empty": "No customers yet.",
+    "deactivate": "Deactivate",
+    "status": {
+      "prospect": "prospect",
+      "active": "active",
+      "inactive": "inactive"
+    }
   }
 }
