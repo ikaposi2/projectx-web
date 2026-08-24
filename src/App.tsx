@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type Brand = {
@@ -101,6 +101,7 @@ export default function App() {
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
+  const activeCellKey = useRef<string | null>(null);
 
   const weekDates = useMemo(
     () => DAY_KEYS.map((_, i) => toIsoDate(addDays(weekStart, i))),
@@ -118,11 +119,11 @@ export default function App() {
       ...budgets.map((b) => ({
         id: b.id,
         label: b.name,
-        subtitle: t("time.remaining", { hours: b.remaining_hours }),
+        subtitle: String(b.remaining_hours),
         classification: "non_billable" as const,
       })),
     ],
-    [projects, budgets, t],
+    [projects, budgets],
   );
 
   const entryByKey = useMemo(() => {
@@ -218,15 +219,21 @@ export default function App() {
   }, [user, token, loadBookable, loadEntries]);
 
   useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const row of rows) {
-      for (const date of weekDates) {
-        const key = `${row.id}|${date}`;
-        const entry = entryByKey.get(key);
-        next[key] = entry ? String(entry.hours) : "";
+    setDraftHours((prev) => {
+      const next: Record<string, string> = {};
+      for (const row of rows) {
+        for (const date of weekDates) {
+          const key = `${row.id}|${date}`;
+          if (key === activeCellKey.current && prev[key] !== undefined) {
+            next[key] = prev[key];
+            continue;
+          }
+          const entry = entryByKey.get(key);
+          next[key] = entry ? String(entry.hours) : "";
+        }
       }
-    }
-    setDraftHours(next);
+      return next;
+    });
   }, [rows, weekDates, entryByKey]);
 
   function setLocale(lng: "nl" | "en") {
@@ -387,24 +394,36 @@ export default function App() {
       <td key={date} className={dayClass(dayIndex)}>
         <input
           className={locked ? "hours-cell approved" : "hours-cell"}
-          type="number"
-          min={0}
-          max={24}
-          step={0.25}
+          type="text"
           inputMode="decimal"
           aria-label={`${row.label} ${date}`}
           value={draftHours[key] ?? ""}
-          disabled={locked || savingCell === key}
+          readOnly={locked}
+          disabled={locked}
+          aria-busy={savingCell === key}
           title={locked ? t("time.approvedCell") : undefined}
           onFocus={() => {
             if (locked) return;
-            const current = draftHours[key];
-            if (current === undefined || current.trim() === "") {
-              setDraftHours((prev) => ({ ...prev, [key]: "8" }));
-            }
+            activeCellKey.current = key;
+            setDraftHours((prev) => {
+              const current = prev[key];
+              if (current === undefined || current.trim() === "") {
+                return { ...prev, [key]: "8" };
+              }
+              return prev;
+            });
           }}
-          onChange={(e) => setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))}
-          onBlur={(e) => void persistCell(row, date, e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value !== "" && !/^\d{0,2}([.,]\d{0,2})?$/.test(value)) return;
+            setDraftHours((prev) => ({ ...prev, [key]: value.replace(",", ".") }));
+          }}
+          onBlur={(e) => {
+            const typed = e.currentTarget.value.trim();
+            const hours = typed === "" ? (entry ? "" : "8") : typed;
+            activeCellKey.current = null;
+            void persistCell(row, date, hours);
+          }}
         />
       </td>
     );
@@ -417,7 +436,11 @@ export default function App() {
         <tr key={row.id}>
           <th scope="row">
             <span className="row-label">{row.label}</span>
-            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
+            {row.subtitle ? (
+              <span className="row-sub">
+                {kind === "non_billable" ? t("time.remaining", { hours: row.subtitle }) : row.subtitle}
+              </span>
+            ) : null}
           </th>
           {weekDates.map((date, i) => hoursInput(row, date, i))}
         </tr>
