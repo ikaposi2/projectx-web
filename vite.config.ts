@@ -16,6 +16,16 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/time/, ""),
       },
+      "/api/project": {
+        target: "http://127.0.0.1:8003",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/project/, ""),
+      },
+      "/api/partner": {
+        target: "http://127.0.0.1:8004",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/partner/, ""),
+      },
     },
   },
 });

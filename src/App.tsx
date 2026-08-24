@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type Brand = {
@@ -26,8 +26,61 @@ type TimeEntry = {
   project_id: string | null;
 };
 
+type BookableProject = {
+  id: string;
+  customer_name: string;
+  name: string;
+  service_id: string;
+  status: string;
+};
+
+type InternalBudget = {
+  id: string;
+  name: string;
+  annual_hours: number;
+  remaining_hours: number;
+};
+
+type GridRow = {
+  id: string;
+  label: string;
+  subtitle?: string;
+  classification: "billable" | "non_billable";
+};
+
 const API = "/api/identity";
 const TIME_API = "/api/time";
+const PROJECT_API = "/api/project";
+const PARTNER_API = "/api/partner";
+
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
+function startOfIsoWeek(d: Date): Date {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;
+  if (day !== 1) date.setUTCDate(date.getUTCDate() - (day - 1));
+  return date;
+}
+
+function addDays(d: Date, days: number): Date {
+  const next = new Date(d);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function formatWeekRange(monday: Date, locale: string): string {
+  const sunday = addDays(monday, 6);
+  const fmt = new Intl.DateTimeFormat(locale.startsWith("en") ? "en-GB" : "nl-NL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  return `${fmt.format(monday)} – ${fmt.format(sunday)}`;
+}
 
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -42,11 +95,44 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
-  const [workDate, setWorkDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [hours, setHours] = useState("8");
-  const [classification, setClassification] = useState<"billable" | "non_billable">("billable");
-  const [description, setDescription] = useState("");
+  const [projects, setProjects] = useState<BookableProject[]>([]);
+  const [budgets, setBudgets] = useState<InternalBudget[]>([]);
+  const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
+  const [draftHours, setDraftHours] = useState<Record<string, string>>({});
+  const [savingCell, setSavingCell] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
+
+  const weekDates = useMemo(
+    () => DAY_KEYS.map((_, i) => toIsoDate(addDays(weekStart, i))),
+    [weekStart],
+  );
+
+  const rows: GridRow[] = useMemo(
+    () => [
+      ...projects.map((p) => ({
+        id: p.id,
+        label: `${p.customer_name} · ${p.name}`,
+        subtitle: p.service_id,
+        classification: "billable" as const,
+      })),
+      ...budgets.map((b) => ({
+        id: b.id,
+        label: b.name,
+        subtitle: t("time.remaining", { hours: b.remaining_hours }),
+        classification: "non_billable" as const,
+      })),
+    ],
+    [projects, budgets, t],
+  );
+
+  const entryByKey = useMemo(() => {
+    const map = new Map<string, TimeEntry>();
+    for (const entry of entries) {
+      if (!entry.project_id) continue;
+      map.set(`${entry.project_id}|${entry.work_date}`, entry);
+    }
+    return map;
+  }, [entries]);
 
   useEffect(() => {
     void fetch(`${API}/brand`)
@@ -87,10 +173,33 @@ export default function App() {
       });
   }, [token]);
 
-  const loadEntries = useCallback(async () => {
+  const loadBookable = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${TIME_API}/entries`, {
+      const [projRes, budRes] = await Promise.all([
+        fetch(`${PROJECT_API}/projects/bookable`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_API}/budgets/internal`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (!projRes.ok) throw new Error(await projRes.text());
+      if (!budRes.ok) throw new Error(await budRes.text());
+      setProjects((await projRes.json()) as BookableProject[]);
+      setBudgets((await budRes.json()) as InternalBudget[]);
+      setTimeError(null);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
+  const loadEntries = useCallback(async () => {
+    if (!token) return;
+    const from = weekDates[0];
+    const to = weekDates[6];
+    try {
+      const res = await fetch(`${TIME_API}/entries?from=${from}&to=${to}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await res.text());
@@ -99,11 +208,26 @@ export default function App() {
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
-  }, [token]);
+  }, [token, weekDates]);
 
   useEffect(() => {
-    if (user && token) void loadEntries();
-  }, [user, token, loadEntries]);
+    if (user && token) {
+      void loadBookable();
+      void loadEntries();
+    }
+  }, [user, token, loadBookable, loadEntries]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const row of rows) {
+      for (const date of weekDates) {
+        const key = `${row.id}|${date}`;
+        const entry = entryByKey.get(key);
+        next[key] = entry ? String(entry.hours) : "";
+      }
+    }
+    setDraftHours(next);
+  }, [rows, weekDates, entryByKey]);
 
   function setLocale(lng: "nl" | "en") {
     void i18n.changeLanguage(lng);
@@ -142,34 +266,82 @@ export default function App() {
     setToken(null);
     setUser(null);
     setEntries([]);
+    setProjects([]);
+    setBudgets([]);
   }
 
-  async function createEntry(e: FormEvent) {
-    e.preventDefault();
+  async function persistCell(row: GridRow, date: string, raw: string) {
     if (!token) return;
+    const key = `${row.id}|${date}`;
+    const entry = entryByKey.get(key);
+    const trimmed = raw.trim();
+    const hours = trimmed === "" ? 0 : Number(trimmed);
+
+    if (entry?.status === "approved") {
+      setDraftHours((prev) => ({ ...prev, [key]: String(entry.hours) }));
+      return;
+    }
+
+    if (Number.isNaN(hours) || hours < 0 || hours > 24) {
+      setTimeError("invalid hours");
+      setDraftHours((prev) => ({ ...prev, [key]: entry ? String(entry.hours) : "" }));
+      return;
+    }
+
+    if (!entry && hours === 0) return;
+    if (entry && hours === entry.hours) return;
+
+    setSavingCell(key);
     setTimeError(null);
     try {
-      const res = await fetch(`${TIME_API}/entries`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          work_date: workDate,
-          hours: Number(hours),
-          classification,
-          description,
-        }),
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? res.statusText);
+      if (hours === 0 && entry) {
+        const res = await fetch(`${TIME_API}/entries/${entry.id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}));
+          throw new Error(detail.detail ?? res.statusText);
+        }
+      } else if (entry) {
+        const res = await fetch(`${TIME_API}/entries/${entry.id}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ hours }),
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}));
+          throw new Error(detail.detail ?? res.statusText);
+        }
+      } else if (hours > 0) {
+        const res = await fetch(`${TIME_API}/entries`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            work_date: date,
+            hours,
+            classification: row.classification,
+            project_id: row.id,
+            description: "",
+          }),
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}));
+          throw new Error(detail.detail ?? res.statusText);
+        }
       }
-      setDescription("");
       await loadEntries();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
+      setDraftHours((prev) => ({ ...prev, [key]: entry ? String(entry.hours) : "" }));
+    } finally {
+      setSavingCell(null);
     }
   }
 
@@ -191,7 +363,17 @@ export default function App() {
     }
   }
 
+  const dayTotals = weekDates.map((date) =>
+    rows.reduce((sum, row) => {
+      const entry = entryByKey.get(`${row.id}|${date}`);
+      return sum + (entry?.hours ?? 0);
+    }, 0),
+  );
+  const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
+
+  const submittedEntries = entries.filter((e) => e.status === "submitted");
   const displayName = brand?.display_name ?? "Platform";
+  const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
 
   return (
     <div className="shell">
@@ -262,7 +444,7 @@ export default function App() {
           </section>
         ) : (
           <>
-            <section className="panel wide">
+            <section className="panel wide timesheet">
               <div className="row-between">
                 <div>
                   <h1>{t("app.welcome", { name: user.full_name })}</h1>
@@ -277,71 +459,150 @@ export default function App() {
               </p>
             </section>
 
-            <section className="panel wide">
-              <h2>{t("time.new")}</h2>
-              <form className="time-form" onSubmit={createEntry}>
-                <label htmlFor="workDate">{t("time.date")}</label>
-                <input
-                  id="workDate"
-                  type="date"
-                  value={workDate}
-                  onChange={(e) => setWorkDate(e.target.value)}
-                  required
-                />
-                <label htmlFor="hours">{t("time.hours")}</label>
-                <input
-                  id="hours"
-                  type="number"
-                  min={0.25}
-                  max={24}
-                  step={0.25}
-                  value={hours}
-                  onChange={(e) => setHours(e.target.value)}
-                  required
-                />
-                <label htmlFor="classification">{t("time.classification")}</label>
-                <select
-                  id="classification"
-                  value={classification}
-                  onChange={(e) => setClassification(e.target.value as "billable" | "non_billable")}
-                >
-                  <option value="billable">{t("time.billable")}</option>
-                  <option value="non_billable">{t("time.nonBillable")}</option>
-                </select>
-                <label htmlFor="description">{t("time.description")}</label>
-                <input
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
+            <section className="panel wide timesheet">
+              <div className="week-nav">
+                <h2>{t("time.week")}</h2>
                 <div className="actions">
-                  <button className="primary" type="submit">
-                    {t("time.submit")}
+                  <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))}>
+                    {t("time.prevWeek")}
+                  </button>
+                  <button type="button" onClick={() => setWeekStart(startOfIsoWeek(new Date()))}>
+                    {t("time.thisWeek")}
+                  </button>
+                  <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))}>
+                    {t("time.nextWeek")}
                   </button>
                 </div>
-              </form>
+              </div>
+              <p className="week-range">{formatWeekRange(weekStart, i18n.language)}</p>
+
+              <div className="timesheet-scroll">
+                <table className="timesheet-grid">
+                  <thead>
+                    <tr>
+                      <th scope="col">{t("time.hours")}</th>
+                      {DAY_KEYS.map((day, i) => (
+                        <th key={day} scope="col">
+                          <span className="day-name">{t(`time.days.${day}`)}</span>
+                          <span className="day-date">{weekDates[i].slice(8)}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projects.length > 0 && (
+                      <tr className="section-row">
+                        <td colSpan={8}>{t("time.billableProjects")}</td>
+                      </tr>
+                    )}
+                    {rows
+                      .filter((r) => r.classification === "billable")
+                      .map((row) => (
+                        <tr key={row.id}>
+                          <th scope="row">
+                            <span className="row-label">{row.label}</span>
+                            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
+                          </th>
+                          {weekDates.map((date) => {
+                            const key = `${row.id}|${date}`;
+                            const entry = entryByKey.get(key);
+                            const locked = entry?.status === "approved";
+                            return (
+                              <td key={date}>
+                                <input
+                                  className={locked ? "hours-cell approved" : "hours-cell"}
+                                  type="number"
+                                  min={0}
+                                  max={24}
+                                  step={0.25}
+                                  inputMode="decimal"
+                                  aria-label={`${row.label} ${date}`}
+                                  value={draftHours[key] ?? ""}
+                                  disabled={locked || savingCell === key}
+                                  title={locked ? t("time.approvedCell") : undefined}
+                                  onChange={(e) =>
+                                    setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))
+                                  }
+                                  onBlur={(e) => void persistCell(row, date, e.target.value)}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    {budgets.length > 0 && (
+                      <tr className="section-row">
+                        <td colSpan={8}>{t("time.internalBudgets")}</td>
+                      </tr>
+                    )}
+                    {rows
+                      .filter((r) => r.classification === "non_billable")
+                      .map((row) => (
+                        <tr key={row.id}>
+                          <th scope="row">
+                            <span className="row-label">{row.label}</span>
+                            {row.subtitle ? <span className="row-sub">{row.subtitle}</span> : null}
+                          </th>
+                          {weekDates.map((date) => {
+                            const key = `${row.id}|${date}`;
+                            const entry = entryByKey.get(key);
+                            const locked = entry?.status === "approved";
+                            return (
+                              <td key={date}>
+                                <input
+                                  className={locked ? "hours-cell approved" : "hours-cell"}
+                                  type="number"
+                                  min={0}
+                                  max={24}
+                                  step={0.25}
+                                  inputMode="decimal"
+                                  aria-label={`${row.label} ${date}`}
+                                  value={draftHours[key] ?? ""}
+                                  disabled={locked || savingCell === key}
+                                  title={locked ? t("time.approvedCell") : undefined}
+                                  onChange={(e) =>
+                                    setDraftHours((prev) => ({ ...prev, [key]: e.target.value }))
+                                  }
+                                  onBlur={(e) => void persistCell(row, date, e.target.value)}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    <tr className="totals-row">
+                      <th scope="row">{t("time.dayTotal")}</th>
+                      {dayTotals.map((total, i) => (
+                        <td key={weekDates[i]}>{total > 0 ? total : "—"}</td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="week-total">
+                {t("time.weekTotal")}: <strong>{weekTotal}</strong>
+              </p>
               {timeError && <p className="status error">{timeError}</p>}
             </section>
 
             <section className="panel wide">
               <h2>{t("time.entries")}</h2>
-              {entries.length === 0 ? (
+              {submittedEntries.length === 0 ? (
                 <p className="status">{t("time.empty")}</p>
               ) : (
                 <ul className="entry-list">
-                  {entries.map((entry) => (
+                  {submittedEntries.map((entry) => (
                     <li key={entry.id}>
                       <div>
                         <strong>{entry.work_date}</strong> · {entry.hours}h ·{" "}
-                        {entry.classification === "billable" ? t("time.billable") : t("time.nonBillable")} ·{" "}
-                        {t(`time.status.${entry.status}`)}
-                        {entry.description ? <span className="muted"> — {entry.description}</span> : null}
+                        {entry.classification === "billable" ? t("time.billable") : t("time.nonBillable")}
+                        {entry.project_id ? (
+                          <span className="muted"> — {rowLabel(entry.project_id)}</span>
+                        ) : null}
                       </div>
-                      {entry.status === "submitted" ? (
-                        <button type="button" className="primary" onClick={() => void approveEntry(entry.id)}>
-                          {t("time.approve")}
-                        </button>
-                      ) : null}
+                      <button type="button" className="primary" onClick={() => void approveEntry(entry.id)}>
+                        {t("time.approve")}
+                      </button>
                     </li>
                   ))}
                 </ul>
