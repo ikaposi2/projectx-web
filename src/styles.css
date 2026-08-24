@@ -389,10 +389,47 @@ body {
   font: inherit;
 }
 
+.customer-form {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.customer-form fieldset {
+  margin: 0;
+  padding: 0.85rem 1rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.customer-form legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .customer-form input {
-  flex: 1;
-  min-width: 12rem;
-  margin-bottom: 0 !important;
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.customer-form .actions {
+  margin-top: 0.25rem;
+}
+
+.customer-form .actions .primary {
+  margin-bottom: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.4fr) 1fr;
+  gap: 0.75rem;
+}
+
+.field-hint {
+  margin: -0.35rem 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .entry-list {

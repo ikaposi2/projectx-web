@@ -65,6 +65,34 @@ type Customer = {
   id: string;
   name: string;
   status: "prospect" | "active" | "inactive";
+  contact_name: string;
+  contact_email: string | null;
+  contact_phone: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
+  city: string | null;
+  country: string | null;
+  technical_contact_name: string | null;
+  technical_contact_email: string | null;
+  technical_contact_phone: string | null;
+  notes: string | null;
+};
+
+const emptyCustomerForm = {
+  name: "",
+  contact_name: "",
+  contact_email: "",
+  contact_phone: "",
+  address_line1: "",
+  address_line2: "",
+  postal_code: "",
+  city: "",
+  country: "",
+  technical_contact_name: "",
+  technical_contact_email: "",
+  technical_contact_phone: "",
+  notes: "",
 };
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -112,7 +140,7 @@ export default function App() {
   const [projects, setProjects] = useState<BookableProject[]>([]);
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [newCustomerName, setNewCustomerName] = useState("");
+  const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
@@ -397,9 +425,23 @@ export default function App() {
     }
   }
 
+  function formatApiError(detail: unknown, fallback: string): string {
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)))
+        .join("; ");
+    }
+    return fallback;
+  }
+
   async function createCustomer(e: FormEvent) {
     e.preventDefault();
-    if (!token || !newCustomerName.trim()) return;
+    if (!token || !customerForm.name.trim() || !customerForm.contact_name.trim()) return;
+    if (!customerForm.contact_email.trim() && !customerForm.contact_phone.trim()) {
+      setCustomerError(t("customer.channelRequired"));
+      return;
+    }
     setCustomerError(null);
     try {
       const res = await fetch(`${CUSTOMER_API}/customers`, {
@@ -408,17 +450,44 @@ export default function App() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: newCustomerName.trim(), status: "active" }),
+        body: JSON.stringify({
+          name: customerForm.name.trim(),
+          status: "active",
+          contact_name: customerForm.contact_name.trim(),
+          contact_email: customerForm.contact_email.trim() || null,
+          contact_phone: customerForm.contact_phone.trim() || null,
+          address_line1: customerForm.address_line1.trim() || null,
+          address_line2: customerForm.address_line2.trim() || null,
+          postal_code: customerForm.postal_code.trim() || null,
+          city: customerForm.city.trim() || null,
+          country: customerForm.country.trim() || null,
+          technical_contact_name: customerForm.technical_contact_name.trim() || null,
+          technical_contact_email: customerForm.technical_contact_email.trim() || null,
+          technical_contact_phone: customerForm.technical_contact_phone.trim() || null,
+          notes: customerForm.notes.trim() || null,
+        }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? res.statusText);
+        throw new Error(formatApiError(detail.detail, res.statusText));
       }
-      setNewCustomerName("");
+      setCustomerForm(emptyCustomerForm);
       await loadCustomers();
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
+  }
+
+  function customerChannel(customer: Customer): string {
+    const parts = [customer.contact_email, customer.contact_phone].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function customerAddress(customer: Customer): string | null {
+    const line = [customer.address_line1, customer.postal_code, customer.city, customer.country]
+      .filter(Boolean)
+      .join(", ");
+    return line || null;
   }
 
   async function deactivateCustomer(id: string) {
@@ -677,15 +746,126 @@ export default function App() {
                 <h1>{t("customer.title")}</h1>
                 <p>{t("customer.intro")}</p>
                 <form className="customer-form" onSubmit={(e) => void createCustomer(e)}>
-                  <label htmlFor="customerName">{t("customer.name")}</label>
-                  <div className="actions">
+                  <fieldset>
+                    <legend>{t("customer.sectionCompany")}</legend>
+                    <label htmlFor="customerName">{t("customer.name")}</label>
                     <input
                       id="customerName"
-                      value={newCustomerName}
-                      onChange={(e) => setNewCustomerName(e.target.value)}
+                      value={customerForm.name}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
                       required
                       maxLength={200}
                     />
+                  </fieldset>
+
+                  <fieldset>
+                    <legend>{t("customer.sectionPrimary")}</legend>
+                    <label htmlFor="contactName">{t("customer.contactName")}</label>
+                    <input
+                      id="contactName"
+                      value={customerForm.contact_name}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, contact_name: e.target.value }))}
+                      required
+                      maxLength={200}
+                    />
+                    <label htmlFor="contactEmail">{t("customer.contactEmail")}</label>
+                    <input
+                      id="contactEmail"
+                      type="email"
+                      value={customerForm.contact_email}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, contact_email: e.target.value }))}
+                      maxLength={320}
+                    />
+                    <label htmlFor="contactPhone">{t("customer.contactPhone")}</label>
+                    <input
+                      id="contactPhone"
+                      type="tel"
+                      value={customerForm.contact_phone}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, contact_phone: e.target.value }))}
+                      maxLength={40}
+                    />
+                    <p className="field-hint">{t("customer.channelHint")}</p>
+                  </fieldset>
+
+                  <fieldset>
+                    <legend>{t("customer.sectionAddress")}</legend>
+                    <label htmlFor="addressLine1">{t("customer.addressLine1")}</label>
+                    <input
+                      id="addressLine1"
+                      value={customerForm.address_line1}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, address_line1: e.target.value }))}
+                      maxLength={200}
+                    />
+                    <label htmlFor="addressLine2">{t("customer.addressLine2")}</label>
+                    <input
+                      id="addressLine2"
+                      value={customerForm.address_line2}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, address_line2: e.target.value }))}
+                      maxLength={200}
+                    />
+                    <div className="form-row">
+                      <div>
+                        <label htmlFor="postalCode">{t("customer.postalCode")}</label>
+                        <input
+                          id="postalCode"
+                          value={customerForm.postal_code}
+                          onChange={(e) => setCustomerForm((prev) => ({ ...prev, postal_code: e.target.value }))}
+                          maxLength={32}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="city">{t("customer.city")}</label>
+                        <input
+                          id="city"
+                          value={customerForm.city}
+                          onChange={(e) => setCustomerForm((prev) => ({ ...prev, city: e.target.value }))}
+                          maxLength={120}
+                        />
+                      </div>
+                    </div>
+                    <label htmlFor="country">{t("customer.country")}</label>
+                    <input
+                      id="country"
+                      value={customerForm.country}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, country: e.target.value }))}
+                      maxLength={120}
+                    />
+                  </fieldset>
+
+                  <fieldset>
+                    <legend>{t("customer.sectionTechnical")}</legend>
+                    <label htmlFor="techName">{t("customer.technicalContactName")}</label>
+                    <input
+                      id="techName"
+                      value={customerForm.technical_contact_name}
+                      onChange={(e) =>
+                        setCustomerForm((prev) => ({ ...prev, technical_contact_name: e.target.value }))
+                      }
+                      maxLength={200}
+                    />
+                    <label htmlFor="techEmail">{t("customer.technicalContactEmail")}</label>
+                    <input
+                      id="techEmail"
+                      type="email"
+                      value={customerForm.technical_contact_email}
+                      onChange={(e) =>
+                        setCustomerForm((prev) => ({ ...prev, technical_contact_email: e.target.value }))
+                      }
+                      maxLength={320}
+                    />
+                    <label htmlFor="techPhone">{t("customer.technicalContactPhone")}</label>
+                    <input
+                      id="techPhone"
+                      type="tel"
+                      value={customerForm.technical_contact_phone}
+                      onChange={(e) =>
+                        setCustomerForm((prev) => ({ ...prev, technical_contact_phone: e.target.value }))
+                      }
+                      maxLength={40}
+                    />
+                  </fieldset>
+
+                  <div className="actions">
                     <button className="primary" type="submit">
                       {t("customer.add")}
                     </button>
@@ -701,6 +881,27 @@ export default function App() {
                         <div>
                           <strong>{customer.name}</strong>
                           <span className="muted"> — {t(`customer.status.${customer.status}`)}</span>
+                          <div className="muted">
+                            {customer.contact_name}
+                            {customerChannel(customer) ? ` · ${customerChannel(customer)}` : ""}
+                          </div>
+                          {customerAddress(customer) ? (
+                            <div className="muted">{customerAddress(customer)}</div>
+                          ) : null}
+                          {customer.technical_contact_name ||
+                          customer.technical_contact_email ||
+                          customer.technical_contact_phone ? (
+                            <div className="muted">
+                              {t("customer.technicalShort")}:{" "}
+                              {[
+                                customer.technical_contact_name,
+                                customer.technical_contact_email,
+                                customer.technical_contact_phone,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          ) : null}
                         </div>
                         {customer.status !== "inactive" ? (
                           <button type="button" onClick={() => void deactivateCustomer(customer.id)}>
@@ -779,7 +980,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "admin" && isManager ? (
+            {activeView === "admin" && isManager ? (
               <>
                 <section className="panel wide">
                   <h1>{t("nav.admin")}</h1>
