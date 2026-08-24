@@ -35,6 +35,8 @@ type BookableProject = {
   name: string;
   service_id: string;
   status: string;
+  contracted_hours: number;
+  remaining_hours: number;
 };
 
 type InternalBudget = {
@@ -116,7 +118,7 @@ export default function App() {
       ...projects.map((p) => ({
         id: p.id,
         label: `${p.customer_name} · ${p.name}`,
-        subtitle: p.service_id,
+        subtitle: String(p.remaining_hours),
         classification: "billable" as const,
       })),
       ...budgets.map((b) => ({
@@ -481,9 +483,7 @@ export default function App() {
           <th scope="row">
             <span className="row-label">{row.label}</span>
             {row.subtitle ? (
-              <span className="row-sub">
-                {kind === "non_billable" ? t("time.remaining", { hours: row.subtitle }) : row.subtitle}
-              </span>
+              <span className="row-sub">{t("time.remaining", { hours: row.subtitle })}</span>
             ) : null}
           </th>
           {weekDates.map((date, i) => hoursInput(row, date, i))}
