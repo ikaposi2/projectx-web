@@ -18,6 +18,7 @@ type User = {
 
 type TimeEntry = {
   id: string;
+  partner_id: string;
   work_date: string;
   hours: number;
   classification: "billable" | "non_billable";
@@ -25,6 +26,8 @@ type TimeEntry = {
   description: string;
   project_id: string | null;
 };
+
+const MANAGER_ROLES = new Set(["partner", "manager", "admin"]);
 
 type BookableProject = {
   id: string;
@@ -126,14 +129,25 @@ export default function App() {
     [projects, budgets],
   );
 
+  const myEntries = useMemo(
+    () => (user ? entries.filter((entry) => entry.partner_id === user.id) : entries),
+    [entries, user],
+  );
+
   const entryByKey = useMemo(() => {
+    const rank = (status: TimeEntry["status"]) =>
+      status === "rejected" ? 0 : status === "submitted" ? 1 : 2;
     const map = new Map<string, TimeEntry>();
-    for (const entry of entries) {
+    for (const entry of myEntries) {
       if (!entry.project_id) continue;
-      map.set(`${entry.project_id}|${entry.work_date}`, entry);
+      const key = `${entry.project_id}|${entry.work_date}`;
+      const existing = map.get(key);
+      if (!existing || rank(entry.status) >= rank(existing.status)) {
+        map.set(key, entry);
+      }
     }
     return map;
-  }, [entries]);
+  }, [myEntries]);
 
   useEffect(() => {
     void fetch(`${API}/brand`)
@@ -284,7 +298,7 @@ export default function App() {
     const trimmed = raw.trim();
     const hours = trimmed === "" ? 0 : Number(trimmed);
 
-    if (entry?.status === "approved") {
+    if (entry?.status === "approved" || entry?.status === "rejected") {
       setDraftHours((prev) => ({ ...prev, [key]: String(entry.hours) }));
       return;
     }
@@ -352,11 +366,11 @@ export default function App() {
     }
   }
 
-  async function approveEntry(id: string) {
+  async function postEntryAction(id: string, action: "approve" | "refuse" | "reset") {
     if (!token) return;
     setTimeError(null);
     try {
-      const res = await fetch(`${TIME_API}/entries/${id}/approve`, {
+      const res = await fetch(`${TIME_API}/entries/${id}/${action}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -373,19 +387,25 @@ export default function App() {
   const dayTotals = weekDates.map((date) =>
     rows.reduce((sum, row) => {
       const key = `${row.id}|${date}`;
+      const entry = entryByKey.get(key);
+      if (entry?.status === "rejected") return sum;
       const draft = draftHours[key];
       if (draft !== undefined && draft.trim() !== "") {
         const n = Number(draft.replace(",", "."));
         return sum + (Number.isFinite(n) && n > 0 ? n : 0);
       }
-      return sum + (entryByKey.get(key)?.hours ?? 0);
+      return sum + (entry?.hours ?? 0);
     }, 0),
   );
   const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
 
+  const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const submittedEntries = entries.filter((e) => e.status === "submitted");
+  const correctionEntries = entries.filter((e) => e.status === "approved" || e.status === "rejected");
   const displayName = brand?.display_name ?? "Platform";
   const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
+  const whoLabel = (entry: TimeEntry) =>
+    user && entry.partner_id === user.id ? t("time.you") : t("time.colleague");
 
   function dayClass(index: number): string {
     const total = dayTotals[index] ?? 0;
@@ -398,11 +418,17 @@ export default function App() {
   function hoursInput(row: GridRow, date: string, dayIndex: number) {
     const key = `${row.id}|${date}`;
     const entry = entryByKey.get(key);
-    const locked = entry?.status === "approved";
+    const locked = entry?.status === "approved" || entry?.status === "rejected";
+    const cellClass =
+      entry?.status === "rejected"
+        ? "hours-cell rejected"
+        : entry?.status === "approved"
+          ? "hours-cell approved"
+          : "hours-cell";
     return (
       <td key={date} className={dayClass(dayIndex)}>
         <input
-          className={locked ? "hours-cell approved" : "hours-cell"}
+          className={cellClass}
           type="text"
           inputMode="decimal"
           aria-label={`${row.label} ${date}`}
@@ -410,7 +436,13 @@ export default function App() {
           readOnly={locked}
           disabled={locked}
           aria-busy={savingCell === key}
-          title={locked ? t("time.approvedCell") : undefined}
+          title={
+            entry?.status === "rejected"
+              ? t("time.rejectedCell")
+              : entry?.status === "approved"
+                ? t("time.approvedCell")
+                : undefined
+          }
           onFocus={() => {
             if (locked) return;
             activeCellKey.current = key;
@@ -600,29 +632,78 @@ export default function App() {
               {timeError && <p className="status error">{timeError}</p>}
             </section>
 
-            <section className="panel wide">
-              <h2>{t("time.entries")}</h2>
-              {submittedEntries.length === 0 ? (
-                <p className="status">{t("time.empty")}</p>
-              ) : (
-                <ul className="entry-list">
-                  {submittedEntries.map((entry) => (
-                    <li key={entry.id}>
-                      <div>
-                        <strong>{entry.work_date}</strong> · {entry.hours}h ·{" "}
-                        {entry.classification === "billable" ? t("time.billable") : t("time.nonBillable")}
-                        {entry.project_id ? (
-                          <span className="muted"> — {rowLabel(entry.project_id)}</span>
-                        ) : null}
-                      </div>
-                      <button type="button" className="primary" onClick={() => void approveEntry(entry.id)}>
-                        {t("time.approve")}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {isManager ? (
+              <>
+                <section className="panel wide">
+                  <h2>{t("time.entries")}</h2>
+                  {submittedEntries.length === 0 ? (
+                    <p className="status">{t("time.empty")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {submittedEntries.map((entry) => (
+                        <li key={entry.id}>
+                          <div>
+                            <strong>{entry.work_date}</strong> · {entry.hours}h · {whoLabel(entry)} ·{" "}
+                            {entry.classification === "billable" ? t("time.billable") : t("time.nonBillable")}
+                            {entry.project_id ? (
+                              <span className="muted"> — {rowLabel(entry.project_id)}</span>
+                            ) : null}
+                          </div>
+                          <div className="entry-actions">
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => void postEntryAction(entry.id, "approve")}
+                            >
+                              {t("time.approve")}
+                            </button>
+                            <button type="button" onClick={() => void postEntryAction(entry.id, "refuse")}>
+                              {t("time.refuse")}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="panel wide">
+                  <h2>{t("time.correction")}</h2>
+                  <p className="status">{t("time.correctionHint")}</p>
+                  {correctionEntries.length === 0 ? (
+                    <p className="status">{t("time.correctionEmpty")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {correctionEntries.map((entry) => (
+                        <li key={entry.id}>
+                          <div>
+                            <strong>{entry.work_date}</strong> · {entry.hours}h · {whoLabel(entry)} ·{" "}
+                            {t(`time.status.${entry.status}`)}
+                            {entry.project_id ? (
+                              <span className="muted"> — {rowLabel(entry.project_id)}</span>
+                            ) : null}
+                          </div>
+                          <div className="entry-actions">
+                            {entry.status === "approved" ? (
+                              <button type="button" onClick={() => void postEntryAction(entry.id, "refuse")}>
+                                {t("time.refuse")}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => void postEntryAction(entry.id, "reset")}
+                            >
+                              {t("time.reset")}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </>
+            ) : null}
           </>
         )}
       </main>

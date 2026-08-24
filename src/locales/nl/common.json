@@ -29,8 +29,16 @@
     "billable": "Billable",
     "nonBillable": "Non-billable",
     "approve": "Goedkeuren",
+    "refuse": "Weigeren",
+    "reset": "Resetten",
+    "correction": "Correctie",
+    "correctionHint": "Weiger uren of zet ze terug naar bewerkbaar.",
+    "correctionEmpty": "Geen goedgekeurde of geweigerde uren deze week.",
     "empty": "Geen ingediende registraties deze week.",
     "approvedCell": "Goedgekeurd",
+    "rejectedCell": "Geweigerd — reset om opnieuw te boeken",
+    "you": "jij",
+    "colleague": "collega",
     "days": {
       "mon": "ma",
       "tue": "di",
@@ -43,7 +51,7 @@
     "status": {
       "submitted": "ingediend",
       "approved": "goedgekeurd",
-      "rejected": "afgewezen"
+      "rejected": "geweigerd"
     }
   }
 }
