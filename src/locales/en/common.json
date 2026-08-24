@@ -11,5 +11,25 @@
     "welcome": "Welcome, {{name}}",
     "health": "Identity service",
     "brandPlaceholder": "Company name will come from configuration"
+  },
+  "time": {
+    "health": "Time service",
+    "intro": "Log billable delivery and approved non-billable company-building hours.",
+    "new": "New time entry",
+    "entries": "Entries",
+    "date": "Work date",
+    "hours": "Hours",
+    "classification": "Classification",
+    "billable": "Billable",
+    "nonBillable": "Non-billable",
+    "description": "Description",
+    "submit": "Submit",
+    "approve": "Approve",
+    "empty": "No entries yet.",
+    "status": {
+      "submitted": "submitted",
+      "approved": "approved",
+      "rejected": "rejected"
+    }
   }
 }

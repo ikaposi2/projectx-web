@@ -82,12 +82,68 @@ body {
   padding: 2rem 1.25rem 3rem;
 }
 
+.workspace {
+  display: grid;
+  gap: 1.25rem;
+  justify-items: center;
+  align-content: start;
+  padding: 2rem 1.25rem 3rem;
+}
+
 .panel {
   width: min(420px, 100%);
   background: var(--panel);
   backdrop-filter: blur(8px);
   padding: 1.75rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.panel.wide {
+  width: min(720px, 100%);
+}
+
+.panel h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  margin: 0 0 1rem;
+}
+
+.row-between {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.time-form select {
+  width: 100%;
+  margin-bottom: 0.9rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+}
+
+.entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.entry-list li {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.entry-list .muted {
+  color: var(--muted);
 }
 
 .panel h1 {

@@ -11,5 +11,25 @@
     "welcome": "Welkom, {{name}}",
     "health": "Identity-service",
     "brandPlaceholder": "Bedrijfsnaam volgt via configuratie"
+  },
+  "time": {
+    "health": "Time-service",
+    "intro": "Registreer billable uren en goedgekeurde non-billable company-building uren.",
+    "new": "Nieuwe tijdregistratie",
+    "entries": "Registraties",
+    "date": "Werkdatum",
+    "hours": "Uren",
+    "classification": "Classificatie",
+    "billable": "Billable",
+    "nonBillable": "Non-billable",
+    "description": "Omschrijving",
+    "submit": "Indienen",
+    "approve": "Goedkeuren",
+    "empty": "Nog geen registraties.",
+    "status": {
+      "submitted": "ingediend",
+      "approved": "goedgekeurd",
+      "rejected": "afgewezen"
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type Brand = {
@@ -16,12 +16,24 @@ type User = {
   tenant_id: string;
 };
 
+type TimeEntry = {
+  id: string;
+  work_date: string;
+  hours: number;
+  classification: "billable" | "non_billable";
+  status: "submitted" | "approved" | "rejected";
+  description: string;
+  project_id: string | null;
+};
+
 const API = "/api/identity";
+const TIME_API = "/api/time";
 
 export default function App() {
   const { t, i18n } = useTranslation();
   const [brand, setBrand] = useState<Brand | null>(null);
   const [health, setHealth] = useState<string>("…");
+  const [timeHealth, setTimeHealth] = useState<string>("…");
   const [token, setToken] = useState<string | null>(localStorage.getItem("projectx.token"));
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -29,6 +41,12 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [entries, setEntries] = useState<TimeEntry[]>([]);
+  const [workDate, setWorkDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [hours, setHours] = useState("8");
+  const [classification, setClassification] = useState<"billable" | "non_billable">("billable");
+  const [description, setDescription] = useState("");
+  const [timeError, setTimeError] = useState<string | null>(null);
 
   useEffect(() => {
     void fetch(`${API}/brand`)
@@ -43,6 +61,11 @@ export default function App() {
       .then((r) => r.json())
       .then((h) => setHealth(h.status ?? "ok"))
       .catch(() => setHealth("offline"));
+
+    void fetch(`${TIME_API}/health`)
+      .then((r) => r.json())
+      .then((h) => setTimeHealth(h.status ?? "ok"))
+      .catch(() => setTimeHealth("offline"));
   }, []);
 
   useEffect(() => {
@@ -63,6 +86,24 @@ export default function App() {
         setToken(null);
       });
   }, [token]);
+
+  const loadEntries = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${TIME_API}/entries`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setEntries((await res.json()) as TimeEntry[]);
+      setTimeError(null);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (user && token) void loadEntries();
+  }, [user, token, loadEntries]);
 
   function setLocale(lng: "nl" | "en") {
     void i18n.changeLanguage(lng);
@@ -100,6 +141,54 @@ export default function App() {
     localStorage.removeItem("projectx.token");
     setToken(null);
     setUser(null);
+    setEntries([]);
+  }
+
+  async function createEntry(e: FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${TIME_API}/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          work_date: workDate,
+          hours: Number(hours),
+          classification,
+          description,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? res.statusText);
+      }
+      setDescription("");
+      await loadEntries();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function approveEntry(id: string) {
+    if (!token) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${TIME_API}/entries/${id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? res.statusText);
+      }
+      await loadEntries();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
   }
 
   const displayName = brand?.display_name ?? "Platform";
@@ -121,75 +210,145 @@ export default function App() {
         </div>
       </header>
 
-      <main className="hero">
-        <section className="panel">
-          {user ? (
-            <>
-              <h1>{t("app.welcome", { name: user.full_name })}</h1>
-              <p>{t("app.tagline")}</p>
+      <main className={user ? "workspace" : "hero"}>
+        {!user ? (
+          <section className="panel">
+            <h1>{displayName}</h1>
+            <p>{t("app.tagline")}</p>
+            <form onSubmit={submit}>
+              {mode === "register" && (
+                <>
+                  <label htmlFor="fullName">{t("app.fullName")}</label>
+                  <input
+                    id="fullName"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </>
+              )}
+              <label htmlFor="email">{t("app.email")}</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <label htmlFor="password">{t("app.password")}</label>
+              <input
+                id="password"
+                type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+              />
               <div className="actions">
+                <button className="primary" type="submit">
+                  {mode === "login" ? t("app.login") : t("app.register")}
+                </button>
+                <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
+                  {mode === "login" ? t("app.register") : t("app.login")}
+                </button>
+              </div>
+            </form>
+            {error && <p className="status error">{error}</p>}
+            <p className="status">
+              {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
+            </p>
+          </section>
+        ) : (
+          <>
+            <section className="panel wide">
+              <div className="row-between">
+                <div>
+                  <h1>{t("app.welcome", { name: user.full_name })}</h1>
+                  <p>{t("time.intro")}</p>
+                </div>
                 <button type="button" onClick={logout}>
                   {t("app.logout")}
                 </button>
               </div>
               <p className="status">
-                {t("app.health")}: {health}
+                {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
               </p>
-            </>
-          ) : (
-            <>
-              <h1>{displayName}</h1>
-              <p>{t("app.tagline")}</p>
-              <form onSubmit={submit}>
-                {mode === "register" && (
-                  <>
-                    <label htmlFor="fullName">{t("app.fullName")}</label>
-                    <input
-                      id="fullName"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
-                    />
-                  </>
-                )}
-                <label htmlFor="email">{t("app.email")}</label>
+            </section>
+
+            <section className="panel wide">
+              <h2>{t("time.new")}</h2>
+              <form className="time-form" onSubmit={createEntry}>
+                <label htmlFor="workDate">{t("time.date")}</label>
                 <input
-                  id="email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="workDate"
+                  type="date"
+                  value={workDate}
+                  onChange={(e) => setWorkDate(e.target.value)}
                   required
                 />
-                <label htmlFor="password">{t("app.password")}</label>
+                <label htmlFor="hours">{t("time.hours")}</label>
                 <input
-                  id="password"
-                  type="password"
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="hours"
+                  type="number"
+                  min={0.25}
+                  max={24}
+                  step={0.25}
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
                   required
-                  minLength={8}
+                />
+                <label htmlFor="classification">{t("time.classification")}</label>
+                <select
+                  id="classification"
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value as "billable" | "non_billable")}
+                >
+                  <option value="billable">{t("time.billable")}</option>
+                  <option value="non_billable">{t("time.nonBillable")}</option>
+                </select>
+                <label htmlFor="description">{t("time.description")}</label>
+                <input
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                 />
                 <div className="actions">
                   <button className="primary" type="submit">
-                    {mode === "login" ? t("app.login") : t("app.register")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode(mode === "login" ? "register" : "login")}
-                  >
-                    {mode === "login" ? t("app.register") : t("app.login")}
+                    {t("time.submit")}
                   </button>
                 </div>
               </form>
-              {error && <p className="status error">{error}</p>}
-              <p className="status">
-                {t("app.health")}: {health}
-              </p>
-            </>
-          )}
-        </section>
+              {timeError && <p className="status error">{timeError}</p>}
+            </section>
+
+            <section className="panel wide">
+              <h2>{t("time.entries")}</h2>
+              {entries.length === 0 ? (
+                <p className="status">{t("time.empty")}</p>
+              ) : (
+                <ul className="entry-list">
+                  {entries.map((entry) => (
+                    <li key={entry.id}>
+                      <div>
+                        <strong>{entry.work_date}</strong> · {entry.hours}h ·{" "}
+                        {entry.classification === "billable" ? t("time.billable") : t("time.nonBillable")} ·{" "}
+                        {t(`time.status.${entry.status}`)}
+                        {entry.description ? <span className="muted"> — {entry.description}</span> : null}
+                      </div>
+                      {entry.status === "submitted" ? (
+                        <button type="button" className="primary" onClick={() => void approveEntry(entry.id)}>
+                          {t("time.approve")}
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
