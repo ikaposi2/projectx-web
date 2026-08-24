@@ -379,6 +379,9 @@ export default function App() {
         throw new Error(detail.detail ?? res.statusText);
       }
       await loadEntries();
+      // Partner consumes the NATS event asynchronously; brief wait then refresh remaining hours.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await loadBookable();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
