@@ -199,6 +199,16 @@ body {
   background: rgba(10, 80, 32, 0.62);
 }
 
+.timesheet-grid th.day-warn,
+.timesheet-grid td.day-warn {
+  background: rgba(250, 204, 21, 0.72);
+}
+
+.timesheet-grid td.day-warn .hours-cell {
+  color: #1a1408;
+  border-color: rgba(26, 20, 8, 0.28);
+}
+
 .hours-cell {
   width: 3.5rem;
   margin: 0 !important;

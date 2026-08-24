@@ -372,8 +372,13 @@ export default function App() {
 
   const dayTotals = weekDates.map((date) =>
     rows.reduce((sum, row) => {
-      const entry = entryByKey.get(`${row.id}|${date}`);
-      return sum + (entry?.hours ?? 0);
+      const key = `${row.id}|${date}`;
+      const draft = draftHours[key];
+      if (draft !== undefined && draft.trim() !== "") {
+        const n = Number(draft.replace(",", "."));
+        return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+      }
+      return sum + (entryByKey.get(key)?.hours ?? 0);
     }, 0),
   );
   const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
@@ -383,7 +388,11 @@ export default function App() {
   const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
 
   function dayClass(index: number): string {
-    return index >= 5 ? "day-off" : "day-normal";
+    const total = dayTotals[index] ?? 0;
+    const weekend = index >= 5;
+    const warn = weekend ? total > 0 : total > 8;
+    if (weekend) return warn ? "day-off day-warn" : "day-off";
+    return warn ? "day-normal day-warn" : "day-normal";
   }
 
   function hoursInput(row: GridRow, date: string, dayIndex: number) {
