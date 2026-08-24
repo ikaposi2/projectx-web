@@ -36,12 +36,31 @@ body {
   grid-template-rows: auto 1fr;
 }
 
+.app-shell {
+  grid-template-rows: auto 1fr;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar-right > button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: var(--text);
+  padding: 0.45rem 0.8rem;
 }
 
 .brand {
@@ -60,7 +79,8 @@ body {
 }
 
 .lang button,
-.panel button {
+.panel button,
+.side-nav .nav-item {
   font: inherit;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -70,10 +90,43 @@ body {
 }
 
 .lang button.active,
-.panel button.primary {
+.panel button.primary,
+.side-nav .nav-item.active {
   background: var(--brand-accent);
   color: #1a1408;
   border-color: var(--brand-accent);
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: minmax(12rem, 15rem) 1fr;
+  min-height: 0;
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.25rem 1rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.nav-user {
+  margin: 0 0 0.75rem;
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.side-nav .nav-item {
+  text-align: left;
+  width: 100%;
+  border-color: transparent;
+}
+
+.side-nav .nav-item:hover {
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .hero {
@@ -85,9 +138,10 @@ body {
 .workspace {
   display: grid;
   gap: 1.25rem;
-  justify-items: center;
+  justify-items: stretch;
   align-content: start;
-  padding: 2rem 1.25rem 3rem;
+  padding: 1.5rem 1.25rem 3rem;
+  overflow: auto;
 }
 
 .panel {
@@ -98,25 +152,71 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.workspace .panel {
+  width: 100%;
+  max-width: min(1100px, 100%);
+}
+
 .panel.wide {
   width: min(720px, 100%);
+}
+
+.workspace .panel.wide {
+  width: 100%;
+  max-width: min(1100px, 100%);
 }
 
 .panel.wide.timesheet {
   width: min(1100px, 100%);
 }
 
+.workspace .panel.wide.timesheet {
+  width: 100%;
+  max-width: min(1100px, 100%);
+}
+
+.week-actions {
+  margin-bottom: 1rem;
+}
+
 .week-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 0.35rem;
 }
 
+.week-nav h1,
 .week-nav h2 {
   margin: 0;
+}
+
+.week-nav p {
+  margin: 0.35rem 0 0;
+}
+
+@media (max-width: 800px) {
+  .app-body {
+    grid-template-columns: 1fr;
+  }
+
+  .side-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-user {
+    width: 100%;
+    margin-bottom: 0.25rem;
+  }
+
+  .side-nav .nav-item {
+    width: auto;
+  }
 }
 
 .week-range {

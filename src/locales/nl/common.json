@@ -12,9 +12,16 @@
     "health": "Identity-service",
     "brandPlaceholder": "Bedrijfsnaam volgt via configuratie"
   },
+  "nav": {
+    "menu": "Hoofdmenu",
+    "hours": "Urenregistratie",
+    "admin": "Urenadministratie",
+    "customers": "Klanten"
+  },
   "time": {
     "health": "Time-service",
     "intro": "Boek uren op projecten uit getekende contracten en interne budgetten. Bewerk tot goedkeuring.",
+    "adminIntro": "Keur uren goed, weiger ze, of zet goedgekeurde/geweigerde uren terug naar bewerkbaar.",
     "week": "Week",
     "prevWeek": "Vorige week",
     "nextWeek": "Volgende week",

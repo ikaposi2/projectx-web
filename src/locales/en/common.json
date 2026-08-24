@@ -12,9 +12,16 @@
     "health": "Identity service",
     "brandPlaceholder": "Company name will come from configuration"
   },
+  "nav": {
+    "menu": "Main menu",
+    "hours": "Hour reporting",
+    "admin": "Hour administration",
+    "customers": "Customers"
+  },
   "time": {
     "health": "Time service",
     "intro": "Book hours on signed-contract projects and internal budgets. Edit until approved.",
+    "adminIntro": "Approve hours, refuse them, or reset approved/refused hours so they can be edited again.",
     "week": "Week",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",

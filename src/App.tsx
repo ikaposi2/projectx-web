@@ -53,6 +53,8 @@ type GridRow = {
   classification: "billable" | "non_billable";
 };
 
+type AppView = "hours" | "admin" | "customers";
+
 const API = "/api/identity";
 const TIME_API = "/api/time";
 const PROJECT_API = "/api/project";
@@ -116,6 +118,7 @@ export default function App() {
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [view, setView] = useState<AppView>("hours");
   const activeCellKey = useRef<string | null>(null);
 
   const weekDates = useMemo(
@@ -560,24 +563,35 @@ export default function App() {
   }
 
   return (
-    <div className="shell">
+    <div className={user ? "shell app-shell" : "shell"}>
       <header className="topbar">
         <div className="brand">
           {displayName}
           <span>.</span>
         </div>
-        <div className="lang" aria-label={t("app.language")}>
-          <button type="button" className={i18n.language === "nl" ? "active" : ""} onClick={() => setLocale("nl")}>
-            NL
-          </button>
-          <button type="button" className={i18n.language.startsWith("en") ? "active" : ""} onClick={() => setLocale("en")}>
-            EN
-          </button>
+        <div className="topbar-right">
+          {user ? (
+            <button type="button" onClick={logout}>
+              {t("app.logout")}
+            </button>
+          ) : null}
+          <div className="lang" aria-label={t("app.language")}>
+            <button type="button" className={i18n.language === "nl" ? "active" : ""} onClick={() => setLocale("nl")}>
+              NL
+            </button>
+            <button
+              type="button"
+              className={i18n.language.startsWith("en") ? "active" : ""}
+              onClick={() => setLocale("en")}
+            >
+              EN
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className={user ? "workspace" : "hero"}>
-        {!user ? (
+      {!user ? (
+        <main className="hero">
           <section className="panel">
             <h1>{displayName}</h1>
             <p>{t("app.tagline")}</p>
@@ -626,125 +640,164 @@ export default function App() {
               {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
             </p>
           </section>
-        ) : (
-          <>
-            <section className="panel wide timesheet">
-              <div className="row-between">
-                <div>
-                  <h1>{t("app.welcome", { name: user.full_name })}</h1>
-                  <p>{t("time.intro")}</p>
-                </div>
-                <button type="button" onClick={logout}>
-                  {t("app.logout")}
-                </button>
-              </div>
-              <p className="status">
-                {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
-              </p>
-            </section>
-
-            <section className="panel wide">
-              <h2>{t("customer.title")}</h2>
-              <p className="status">{t("customer.intro")}</p>
-              <form className="customer-form" onSubmit={(e) => void createCustomer(e)}>
-                <label htmlFor="customerName">{t("customer.name")}</label>
-                <div className="actions">
-                  <input
-                    id="customerName"
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                    required
-                    maxLength={200}
-                  />
-                  <button className="primary" type="submit">
-                    {t("customer.add")}
-                  </button>
-                </div>
-              </form>
-              {customerError && <p className="status error">{customerError}</p>}
-              {customers.length === 0 ? (
-                <p className="status">{t("customer.empty")}</p>
-              ) : (
-                <ul className="entry-list">
-                  {customers.map((customer) => (
-                    <li key={customer.id}>
-                      <div>
-                        <strong>{customer.name}</strong>
-                        <span className="muted"> — {t(`customer.status.${customer.status}`)}</span>
-                      </div>
-                      {customer.status !== "inactive" ? (
-                        <button type="button" onClick={() => void deactivateCustomer(customer.id)}>
-                          {t("customer.deactivate")}
-                        </button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="panel wide timesheet">
-              <div className="week-nav">
-                <h2>{t("time.week")}</h2>
-                <div className="actions">
-                  <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))}>
-                    {t("time.prevWeek")}
-                  </button>
-                  <button type="button" onClick={() => setWeekStart(startOfIsoWeek(new Date()))}>
-                    {t("time.thisWeek")}
-                  </button>
-                  <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))}>
-                    {t("time.nextWeek")}
-                  </button>
-                </div>
-              </div>
-              <p className="week-range">{formatWeekRange(weekStart, i18n.language)}</p>
-
-              <div className="timesheet-scroll">
-                <table className="timesheet-grid">
-                  <thead>
-                    <tr>
-                      <th scope="col">{t("time.hours")}</th>
-                      {DAY_KEYS.map((day, i) => (
-                        <th key={day} scope="col" className={dayClass(i)}>
-                          <span className="day-name">{t(`time.days.${day}`)}</span>
-                          <span className="day-date">{weekDates[i].slice(8)}</span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projects.length > 0 && (
-                      <tr className="section-row">
-                        <td colSpan={8}>{t("time.billableProjects")}</td>
-                      </tr>
-                    )}
-                    {projectRows("billable")}
-                    {budgets.length > 0 && (
-                      <tr className="section-row">
-                        <td colSpan={8}>{t("time.internalBudgets")}</td>
-                      </tr>
-                    )}
-                    {projectRows("non_billable")}
-                    <tr className="totals-row">
-                      <th scope="row">{t("time.dayTotal")}</th>
-                      {dayTotals.map((total, i) => (
-                        <td key={weekDates[i]} className={dayClass(i)}>
-                          {total > 0 ? total : "—"}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <p className="week-total">
-                {t("time.weekTotal")}: <strong>{weekTotal}</strong>
-              </p>
-              {timeError && <p className="status error">{timeError}</p>}
-            </section>
-
+        </main>
+      ) : (
+        <div className="app-body">
+          <nav className="side-nav" aria-label={t("nav.menu")}>
+            <p className="nav-user">{t("app.welcome", { name: user.full_name })}</p>
+            <button
+              type="button"
+              className={view === "hours" ? "nav-item active" : "nav-item"}
+              onClick={() => setView("hours")}
+            >
+              {t("nav.hours")}
+            </button>
             {isManager ? (
+              <button
+                type="button"
+                className={view === "admin" ? "nav-item active" : "nav-item"}
+                onClick={() => setView("admin")}
+              >
+                {t("nav.admin")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={view === "customers" ? "nav-item active" : "nav-item"}
+              onClick={() => setView("customers")}
+            >
+              {t("nav.customers")}
+            </button>
+          </nav>
+
+          <main className="workspace">
+            {view === "customers" ? (
+              <section className="panel wide">
+                <h1>{t("customer.title")}</h1>
+                <p>{t("customer.intro")}</p>
+                <form className="customer-form" onSubmit={(e) => void createCustomer(e)}>
+                  <label htmlFor="customerName">{t("customer.name")}</label>
+                  <div className="actions">
+                    <input
+                      id="customerName"
+                      value={newCustomerName}
+                      onChange={(e) => setNewCustomerName(e.target.value)}
+                      required
+                      maxLength={200}
+                    />
+                    <button className="primary" type="submit">
+                      {t("customer.add")}
+                    </button>
+                  </div>
+                </form>
+                {customerError && <p className="status error">{customerError}</p>}
+                {customers.length === 0 ? (
+                  <p className="status">{t("customer.empty")}</p>
+                ) : (
+                  <ul className="entry-list">
+                    {customers.map((customer) => (
+                      <li key={customer.id}>
+                        <div>
+                          <strong>{customer.name}</strong>
+                          <span className="muted"> — {t(`customer.status.${customer.status}`)}</span>
+                        </div>
+                        {customer.status !== "inactive" ? (
+                          <button type="button" onClick={() => void deactivateCustomer(customer.id)}>
+                            {t("customer.deactivate")}
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ) : null}
+
+            {view === "hours" ? (
+              <section className="panel wide timesheet">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("nav.hours")}</h1>
+                    <p>{t("time.intro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))}>
+                      {t("time.prevWeek")}
+                    </button>
+                    <button type="button" onClick={() => setWeekStart(startOfIsoWeek(new Date()))}>
+                      {t("time.thisWeek")}
+                    </button>
+                    <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))}>
+                      {t("time.nextWeek")}
+                    </button>
+                  </div>
+                </div>
+                <p className="week-range">{formatWeekRange(weekStart, i18n.language)}</p>
+
+                <div className="timesheet-scroll">
+                  <table className="timesheet-grid">
+                    <thead>
+                      <tr>
+                        <th scope="col">{t("time.hours")}</th>
+                        {DAY_KEYS.map((day, i) => (
+                          <th key={day} scope="col" className={dayClass(i)}>
+                            <span className="day-name">{t(`time.days.${day}`)}</span>
+                            <span className="day-date">{weekDates[i].slice(8)}</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projects.length > 0 && (
+                        <tr className="section-row">
+                          <td colSpan={8}>{t("time.billableProjects")}</td>
+                        </tr>
+                      )}
+                      {projectRows("billable")}
+                      {budgets.length > 0 && (
+                        <tr className="section-row">
+                          <td colSpan={8}>{t("time.internalBudgets")}</td>
+                        </tr>
+                      )}
+                      {projectRows("non_billable")}
+                      <tr className="totals-row">
+                        <th scope="row">{t("time.dayTotal")}</th>
+                        {dayTotals.map((total, i) => (
+                          <td key={weekDates[i]} className={dayClass(i)}>
+                            {total > 0 ? total : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="week-total">
+                  {t("time.weekTotal")}: <strong>{weekTotal}</strong>
+                </p>
+                {timeError && <p className="status error">{timeError}</p>}
+              </section>
+            ) : null}
+
+            {view === "admin" && isManager ? (
               <>
+                <section className="panel wide">
+                  <h1>{t("nav.admin")}</h1>
+                  <p>{t("time.adminIntro")}</p>
+                  <div className="actions week-actions">
+                    <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))}>
+                      {t("time.prevWeek")}
+                    </button>
+                    <button type="button" onClick={() => setWeekStart(startOfIsoWeek(new Date()))}>
+                      {t("time.thisWeek")}
+                    </button>
+                    <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))}>
+                      {t("time.nextWeek")}
+                    </button>
+                  </div>
+                  <p className="week-range">{formatWeekRange(weekStart, i18n.language)}</p>
+                  {timeError && <p className="status error">{timeError}</p>}
+                </section>
+
                 <section className="panel wide">
                   <h2>{t("time.entries")}</h2>
                   {submittedEntries.length === 0 ? (
@@ -815,9 +868,9 @@ export default function App() {
                 </section>
               </>
             ) : null}
-          </>
-        )}
-      </main>
+          </main>
+        </div>
+      )}
     </div>
   );
 }
