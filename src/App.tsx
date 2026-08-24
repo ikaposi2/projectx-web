@@ -476,6 +476,7 @@ export default function App() {
   const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
 
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
+  const activeView: AppView = view === "admin" && !isManager ? "hours" : view;
   const submittedEntries = entries.filter((e) => e.status === "submitted");
   const correctionEntries = entries.filter((e) => e.status === "approved" || e.status === "rejected");
   const displayName = brand?.display_name ?? "Platform";
@@ -671,7 +672,7 @@ export default function App() {
           </nav>
 
           <main className="workspace">
-            {view === "customers" ? (
+            {activeView === "customers" ? (
               <section className="panel wide">
                 <h1>{t("customer.title")}</h1>
                 <p>{t("customer.intro")}</p>
@@ -713,7 +714,7 @@ export default function App() {
               </section>
             ) : null}
 
-            {view === "hours" ? (
+            {activeView === "hours" ? (
               <section className="panel wide timesheet">
                 <div className="week-nav">
                   <div>
