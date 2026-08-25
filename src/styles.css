@@ -389,6 +389,15 @@ body {
   font: inherit;
 }
 
+.customer-search {
+  margin-bottom: 1.5rem;
+}
+
+.customer-search input[type="search"] {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
 .customer-form {
   display: grid;
   gap: 1rem;

@@ -83,6 +83,10 @@
     "sectionPrimary": "Primair contact",
     "sectionAddress": "Adres (optioneel)",
     "sectionTechnical": "Technisch contact (optioneel)",
+    "search": "Zoeken",
+    "searchPlaceholder": "Bedrijfsnaam of contact…",
+    "searchHint": "Typ om te zoeken op bedrijfsnaam of primair contact.",
+    "noMatches": "Geen klanten gevonden.",
     "addTitle": "Nieuwe klant",
     "editTitle": "Klant bewerken",
     "add": "Toevoegen",
@@ -90,7 +94,6 @@
     "edit": "Bewerken",
     "cancel": "Annuleren",
     "delete": "Verwijderen",
-    "deleteConfirm": "Klant “{{name}}” verwijderen?",
-    "empty": "Nog geen klanten."
+    "deleteConfirm": "Klant “{{name}}” verwijderen?"
   }
 }

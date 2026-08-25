@@ -83,6 +83,10 @@
     "sectionPrimary": "Primary contact",
     "sectionAddress": "Address (optional)",
     "sectionTechnical": "Technical contact (optional)",
+    "search": "Search",
+    "searchPlaceholder": "Company or contact name…",
+    "searchHint": "Type to search by company name or primary contact.",
+    "noMatches": "No customers found.",
     "addTitle": "New customer",
     "editTitle": "Edit customer",
     "add": "Add",
@@ -90,7 +94,6 @@
     "edit": "Edit",
     "cancel": "Cancel",
     "delete": "Delete",
-    "deleteConfirm": "Delete customer “{{name}}”?",
-    "empty": "No customers yet."
+    "deleteConfirm": "Delete customer “{{name}}”?"
   }
 }

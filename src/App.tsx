@@ -140,6 +140,7 @@ export default function App() {
   const [projects, setProjects] = useState<BookableProject[]>([]);
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerQuery, setCustomerQuery] = useState("");
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerError, setCustomerError] = useState<string | null>(null);
@@ -232,19 +233,28 @@ export default function App() {
       });
   }, [token]);
 
-  const loadCustomers = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${CUSTOMER_API}/customers`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setCustomers((await res.json()) as Customer[]);
-      setCustomerError(null);
-    } catch (err) {
-      setCustomerError(err instanceof Error ? err.message : "error");
-    }
-  }, [token]);
+  const searchCustomers = useCallback(
+    async (query: string) => {
+      if (!token) return;
+      const term = query.trim();
+      if (!term) {
+        setCustomers([]);
+        setCustomerError(null);
+        return;
+      }
+      try {
+        const res = await fetch(`${CUSTOMER_API}/customers?q=${encodeURIComponent(term)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setCustomers((await res.json()) as Customer[]);
+        setCustomerError(null);
+      } catch (err) {
+        setCustomerError(err instanceof Error ? err.message : "error");
+      }
+    },
+    [token],
+  );
 
   const loadBookable = useCallback(async () => {
     if (!token) return;
@@ -287,9 +297,16 @@ export default function App() {
     if (user && token) {
       void loadBookable();
       void loadEntries();
-      void loadCustomers();
     }
-  }, [user, token, loadBookable, loadEntries, loadCustomers]);
+  }, [user, token, loadBookable, loadEntries]);
+
+  useEffect(() => {
+    if (!token || view !== "customers") return;
+    const handle = window.setTimeout(() => {
+      void searchCustomers(customerQuery);
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [token, view, customerQuery, searchCustomers]);
 
   useEffect(() => {
     setDraftHours((prev) => {
@@ -507,7 +524,7 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       cancelEditCustomer();
-      await loadCustomers();
+      await searchCustomers(customerQuery);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
@@ -539,7 +556,7 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       if (editingCustomerId === id) cancelEditCustomer();
-      await loadCustomers();
+      await searchCustomers(customerQuery);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
@@ -782,6 +799,63 @@ export default function App() {
               <section className="panel wide">
                 <h1>{t("customer.title")}</h1>
                 <p>{t("customer.intro")}</p>
+
+                <div className="customer-search">
+                  <label htmlFor="customerSearch">{t("customer.search")}</label>
+                  <input
+                    id="customerSearch"
+                    type="search"
+                    value={customerQuery}
+                    onChange={(e) => setCustomerQuery(e.target.value)}
+                    placeholder={t("customer.searchPlaceholder")}
+                    autoComplete="off"
+                  />
+                  {!customerQuery.trim() ? (
+                    <p className="status">{t("customer.searchHint")}</p>
+                  ) : customers.length === 0 ? (
+                    <p className="status">{t("customer.noMatches")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {customers.map((customer) => (
+                        <li key={customer.id}>
+                          <div>
+                            <strong>{customer.name}</strong>
+                            <div className="muted">
+                              {customer.contact_name}
+                              {customerChannel(customer) ? ` · ${customerChannel(customer)}` : ""}
+                            </div>
+                            {customerAddress(customer) ? (
+                              <div className="muted">{customerAddress(customer)}</div>
+                            ) : null}
+                            {customer.technical_contact_name ||
+                            customer.technical_contact_email ||
+                            customer.technical_contact_phone ? (
+                              <div className="muted">
+                                {t("customer.technicalShort")}:{" "}
+                                {[
+                                  customer.technical_contact_name,
+                                  customer.technical_contact_email,
+                                  customer.technical_contact_phone,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="entry-actions">
+                            <button type="button" onClick={() => startEditCustomer(customer)}>
+                              {t("customer.edit")}
+                            </button>
+                            <button type="button" onClick={() => void deleteCustomer(customer.id, customer.name)}>
+                              {t("customer.delete")}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
                 <form className="customer-form" onSubmit={(e) => void saveCustomer(e)}>
                   <h2>{editingCustomerId ? t("customer.editTitle") : t("customer.addTitle")}</h2>
                   <fieldset className="fields-required">
@@ -915,48 +989,6 @@ export default function App() {
                   </div>
                 </form>
                 {customerError && <p className="status error">{customerError}</p>}
-                {customers.length === 0 ? (
-                  <p className="status">{t("customer.empty")}</p>
-                ) : (
-                  <ul className="entry-list">
-                    {customers.map((customer) => (
-                      <li key={customer.id}>
-                        <div>
-                          <strong>{customer.name}</strong>
-                          <div className="muted">
-                            {customer.contact_name}
-                            {customerChannel(customer) ? ` · ${customerChannel(customer)}` : ""}
-                          </div>
-                          {customerAddress(customer) ? (
-                            <div className="muted">{customerAddress(customer)}</div>
-                          ) : null}
-                          {customer.technical_contact_name ||
-                          customer.technical_contact_email ||
-                          customer.technical_contact_phone ? (
-                            <div className="muted">
-                              {t("customer.technicalShort")}:{" "}
-                              {[
-                                customer.technical_contact_name,
-                                customer.technical_contact_email,
-                                customer.technical_contact_phone,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="entry-actions">
-                          <button type="button" onClick={() => startEditCustomer(customer)}>
-                            {t("customer.edit")}
-                          </button>
-                          <button type="button" onClick={() => void deleteCustomer(customer.id, customer.name)}>
-                            {t("customer.delete")}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </section>
             ) : null}
 
