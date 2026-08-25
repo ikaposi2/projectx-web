@@ -94,6 +94,8 @@
     "edit": "Edit",
     "cancel": "Cancel",
     "delete": "Delete",
-    "deleteConfirm": "Delete customer “{{name}}”?"
+    "deleteConfirm": "Delete customer “{{name}}”?",
+    "hasOpenProjects": "This customer still has open projects and cannot be deleted.",
+    "projectServiceUnavailable": "Project check is temporarily unavailable. Try again later."
   }
 }

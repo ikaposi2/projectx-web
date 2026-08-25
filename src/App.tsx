@@ -444,7 +444,11 @@ export default function App() {
   }
 
   function formatApiError(detail: unknown, fallback: string): string {
-    if (typeof detail === "string") return detail;
+    if (typeof detail === "string") {
+      if (detail === "has_open_projects") return t("customer.hasOpenProjects");
+      if (detail === "project_service_unavailable") return t("customer.projectServiceUnavailable");
+      return detail;
+    }
     if (Array.isArray(detail)) {
       return detail
         .map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)))

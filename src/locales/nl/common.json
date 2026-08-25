@@ -94,6 +94,8 @@
     "edit": "Bewerken",
     "cancel": "Annuleren",
     "delete": "Verwijderen",
-    "deleteConfirm": "Klant “{{name}}” verwijderen?"
+    "deleteConfirm": "Klant “{{name}}” verwijderen?",
+    "hasOpenProjects": "Deze klant heeft nog open projecten en kan niet worden verwijderd.",
+    "projectServiceUnavailable": "Projectcontrole tijdelijk niet beschikbaar. Probeer het later opnieuw."
   }
 }
