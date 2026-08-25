@@ -17,6 +17,7 @@
     "hours": "Hour reporting",
     "admin": "Hour administration",
     "finance": "Finance",
+    "catalog": "Catalog",
     "customers": "Customers"
   },
   "time": {
@@ -175,7 +176,17 @@
     "invoiceParties": "Seller {{seller}} → Buyer {{buyer}}",
     "vatLine": "Subtotal €{{subtotal}} + VAT {{rate}}% (€{{vat}}) = €{{total}}",
     "issue": "Issue",
+    "sendInvoice": "Send invoice",
     "markPaid": "Mark paid",
+    "markReturned": "Mark returned",
+    "reopenDraft": "Reopen as draft",
+    "downloadPdf": "Download PDF",
+    "due": "Due",
+    "dueLine": "Due {{date}} ({{days}} days)",
+    "overdue": "Overdue",
+    "overdueAlert": "{{count}} invoice(s) overdue — follow up with the customer",
+    "agendaTitle": "Invoice due dates",
+    "agendaEmpty": "No invoices due this week and none overdue.",
     "internalTitle": "Internal (partners / reserve / VAT)",
     "internalIntro": "Company reserve is net of VAT. VAT collected on invoices sits in a separate account until remitted every quarter.",
     "loading": "Loading finance…",
@@ -199,7 +210,8 @@
     "status": {
       "draft": "Draft",
       "issued": "Issued",
-      "paid": "Paid"
+      "paid": "Paid",
+      "returned": "Returned"
     },
     "kind": {
       "fixed_completion": "Fixed price completion",
@@ -214,5 +226,30 @@
       "75": "75%",
       "complete": "Complete"
     }
+  },
+  "catalog": {
+    "title": "Service catalog",
+    "intro": "Fixed-price offerings used when creating customer projects.",
+    "empty": "No catalog offerings yet.",
+    "edit": "Edit",
+    "editTitle": "Edit offering",
+    "name": "Name (EN)",
+    "listPrice": "List price (€)",
+    "typicalHours": "Typical hours",
+    "save": "Save offering",
+    "saved": "Catalog offering saved."
+  },
+  "project": {
+    "createTitle": "New project from catalog",
+    "createIntro": "Pick a billable customer and a catalog offering. VAT, billing address, and contact details are required on the customer.",
+    "customerSearch": "Search customer",
+    "customerSearchHint": "Type part of the company or contact name…",
+    "catalogOffering": "Catalog offering",
+    "pickService": "Select an offering…",
+    "nameOptional": "Project name (optional)",
+    "create": "Create project",
+    "created": "Project created and available for hour booking.",
+    "billableOk": "Customer is ready for billing.",
+    "notBillable": "Customer missing required billing data: {{missing}}"
   }
 }

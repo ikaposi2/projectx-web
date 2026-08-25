@@ -147,6 +147,10 @@ type FinanceInvoice = {
   vat_eur: number;
   amount_eur: number;
   payment_terms_days: number;
+  issued_at?: string | null;
+  due_date?: string | null;
+  returned_at?: string | null;
+  pdf_path?: string | null;
   status: string;
   notes: string | null;
   lines: {
@@ -200,7 +204,34 @@ type GridRow = {
   classification: "billable" | "non_billable";
 };
 
-type AppView = "hours" | "admin" | "customers" | "finance";
+type InvoiceAgendaItem = {
+  invoice_id: string;
+  invoice_number: string;
+  customer_name: string;
+  amount_eur: number;
+  due_date: string;
+  days_until_due: number;
+  overdue: boolean;
+  has_pdf: boolean;
+};
+
+type CatalogService = {
+  service_id: string;
+  version: string;
+  family: string;
+  status: string;
+  name: Record<string, string>;
+  estimated_hours: number | null;
+  billing_model: string | null;
+  list_price_eur: number | null;
+};
+
+type BillableCheck = {
+  ok: boolean;
+  missing: string[];
+};
+
+type AppView = "hours" | "admin" | "customers" | "finance" | "catalog";
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -208,6 +239,7 @@ const PROJECT_API = "/api/project";
 const PARTNER_API = "/api/partner";
 const CUSTOMER_API = "/api/customer";
 const FINANCE_API = "/api/finance";
+const CATALOG_API = "/api/catalog";
 
 type Customer = {
   id: string;
@@ -357,6 +389,17 @@ export default function App() {
   const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
+  const [financeWeekStart, setFinanceWeekStart] = useState(() => startOfIsoWeek(new Date()));
+  const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
+  const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
+  const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
+  const [catalogForm, setCatalogForm] = useState({ list_price_eur: "", estimated_hours: "", name_en: "" });
+  const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
+  const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
+  const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
+  const [projectBillable, setProjectBillable] = useState<BillableCheck | null>(null);
+  const [projectCreateServiceId, setProjectCreateServiceId] = useState("");
+  const [projectCreateName, setProjectCreateName] = useState("");
   const activeCellKey = useRef<string | null>(null);
 
   const weekDates = useMemo(
@@ -539,16 +582,28 @@ export default function App() {
 
   const loadFinance = useCallback(async () => {
     if (!token) return;
+    const weekStartIso = toIsoDate(financeWeekStart);
     try {
-      const [reserveRes, vatRes, compRes, invRes, candRes, companyRes] = await Promise.all([
+      const [reserveRes, vatRes, compRes, invRes, candRes, companyRes, agendaRes] = await Promise.all([
         fetch(`${FINANCE_API}/reserve`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/vat`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${FINANCE_API}/invoices/agenda?week_start=${weekStartIso}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
-      if (!reserveRes.ok || !vatRes.ok || !compRes.ok || !invRes.ok || !candRes.ok || !companyRes.ok) {
+      if (
+        !reserveRes.ok ||
+        !vatRes.ok ||
+        !compRes.ok ||
+        !invRes.ok ||
+        !candRes.ok ||
+        !companyRes.ok ||
+        !agendaRes.ok
+      ) {
         throw new Error("finance_unavailable");
       }
       setReserve((await reserveRes.json()) as ReserveSnapshot);
@@ -557,6 +612,18 @@ export default function App() {
       setInvoices((await invRes.json()) as FinanceInvoice[]);
       setBillingCandidates((await candRes.json()) as BillingCandidate[]);
       setCompanyProfile((await companyRes.json()) as CompanyProfile);
+      setInvoiceAgenda((await agendaRes.json()) as InvoiceAgendaItem[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, financeWeekStart]);
+
+  const loadCatalog = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${CATALOG_API}/services`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(await res.text());
+      setCatalogServices((await res.json()) as CatalogService[]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -580,7 +647,33 @@ export default function App() {
     if (!token || !user || view !== "finance") return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadFinance();
-  }, [token, user, view, loadFinance]);
+  }, [token, user, view, loadFinance, financeWeekStart]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "catalog") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadCatalog();
+  }, [token, user, view, loadCatalog]);
+
+  useEffect(() => {
+    if (!token || view !== "admin" || !projectCreateCustomerQuery.trim()) {
+      setProjectCreateCustomers([]);
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${CUSTOMER_API}/customers?q=${encodeURIComponent(projectCreateCustomerQuery.trim())}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) return;
+        setProjectCreateCustomers((await res.json()) as Customer[]);
+      } catch {
+        setProjectCreateCustomers([]);
+      }
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [token, view, projectCreateCustomerQuery]);
 
   const loadMsps = useCallback(async () => {
     if (!token) return;
@@ -594,6 +687,29 @@ export default function App() {
       setMspCustomers([]);
     }
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !projectCreateCustomerId) {
+      setProjectBillable(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch(`${CUSTOMER_API}/customers/${projectCreateCustomerId}/billable`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        setProjectBillable((await res.json()) as BillableCheck);
+      } catch {
+        setProjectBillable(null);
+      }
+    })();
+  }, [token, projectCreateCustomerId]);
+
+  useEffect(() => {
+    if (!token || view !== "admin") return;
+    void loadCatalog();
+  }, [token, view, loadCatalog]);
 
   useEffect(() => {
     if (!token || view !== "customers") return;
@@ -1136,6 +1252,91 @@ export default function App() {
     }
   }
 
+  async function downloadInvoicePdf(invoiceId: string) {
+    if (!token) return;
+    try {
+      const res = await fetch(`${FINANCE_API}/invoices/${invoiceId}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(res.statusText);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function saveCatalogService(serviceId: string, version: string) {
+    if (!token) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    try {
+      const res = await fetch(
+        `${CATALOG_API}/services/${serviceId}?version=${encodeURIComponent(version)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            list_price_eur: Number(catalogForm.list_price_eur) || 0,
+            estimated_hours: Number(catalogForm.estimated_hours) || 0,
+            name_en: catalogForm.name_en.trim() || undefined,
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setAdminStatus(t("catalog.saved"));
+      setEditingCatalogId(null);
+      await loadCatalog();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function createProjectFromCatalog() {
+    if (!token || !projectCreateCustomerId || !projectCreateServiceId) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    const customer = projectCreateCustomers.find((c) => c.id === projectCreateCustomerId);
+    const service = catalogServices.find((s) => s.service_id === projectCreateServiceId);
+    if (!customer || !service) return;
+    try {
+      const res = await fetch(`${PROJECT_API}/projects`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customer_id: customer.id,
+          customer_name: customer.name,
+          service_id: service.service_id,
+          service_version: service.version,
+          name: projectCreateName.trim() || undefined,
+          fixed_price_eur: service.list_price_eur ?? undefined,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        if (detail.detail?.code === "customer_not_billable") {
+          throw new Error(t("project.notBillable", { missing: (detail.detail.missing || []).join(", ") }));
+        }
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+      }
+      setAdminStatus(t("project.created"));
+      setProjectCreateCustomerId("");
+      setProjectCreateCustomerQuery("");
+      setProjectCreateServiceId("");
+      setProjectCreateName("");
+      await Promise.all([loadManagedProjects(), loadBookable()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   const budgetPreview = previewBudget();
 
   const dayTotals = weekDates.map((date) =>
@@ -1155,7 +1356,8 @@ export default function App() {
 
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const activeView: AppView =
-    (view === "admin" || view === "finance") && !isManager ? "hours" : view;
+    (view === "admin" || view === "finance" || view === "catalog") && !isManager ? "hours" : view;
+  const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
   const weekDateSet = new Set(weekDates);
   // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
   const submittedEntries = adminEntries.filter((e) => e.status === "submitted");
@@ -1362,6 +1564,15 @@ export default function App() {
                 onClick={() => goToView("finance")}
               >
                 {t("nav.finance")}
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={view === "catalog" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("catalog")}
+              >
+                {t("nav.catalog")}
               </button>
             ) : null}
             <button
@@ -1774,6 +1985,54 @@ export default function App() {
             {activeView === "finance" && isManager ? (
               <>
                 <section className="panel wide">
+                  <h1>{t("finance.agendaTitle")}</h1>
+                  <div className="actions week-actions">
+                    <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, -7))}>
+                      {t("time.prevWeek")}
+                    </button>
+                    <button type="button" onClick={() => setFinanceWeekStart(startOfIsoWeek(new Date()))}>
+                      {t("time.thisWeek")}
+                    </button>
+                    <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, 7))}>
+                      {t("time.nextWeek")}
+                    </button>
+                  </div>
+                  <p className="week-range">{formatWeekRange(financeWeekStart, i18n.language)}</p>
+                  {overdueCount > 0 ? (
+                    <p className="status error">{t("finance.overdueAlert", { count: overdueCount })}</p>
+                  ) : null}
+                  {invoiceAgenda.length === 0 ? (
+                    <p className="status">{t("finance.agendaEmpty")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {invoiceAgenda.map((item) => (
+                        <li key={item.invoice_id}>
+                          <div>
+                            <strong>
+                              {item.invoice_number} · {item.customer_name} · €{item.amount_eur.toFixed(2)}
+                            </strong>
+                            <div className={item.overdue ? "muted error" : "muted"}>
+                              {t("finance.dueLine", {
+                                date: item.due_date,
+                                days: item.days_until_due,
+                              })}
+                              {item.overdue ? ` · ${t("finance.overdue")}` : ""}
+                            </div>
+                          </div>
+                          <div className="entry-actions">
+                            {item.has_pdf ? (
+                              <button type="button" onClick={() => void downloadInvoicePdf(item.invoice_id)}>
+                                {t("finance.downloadPdf")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="panel wide">
                   <h1>{t("finance.billingTitle")}</h1>
                   <p>{t("finance.billingIntro")}</p>
                   {financeStatus ? <p className="status">{financeStatus}</p> : null}
@@ -1843,7 +2102,8 @@ export default function App() {
                             </strong>
                             <div className="muted">
                               {inv.project_name} · {t(`finance.kind.${inv.kind}`, { defaultValue: inv.kind })} ·{" "}
-                              {t(`finance.status.${inv.status}`)}
+                              {t(`finance.status.${inv.status}`, { defaultValue: inv.status })}
+                              {inv.due_date ? ` · ${t("finance.due")} ${inv.due_date.slice(0, 10)}` : ""}
                             </div>
                             <div className="muted">
                               {t("finance.invoiceParties", {
@@ -1870,12 +2130,32 @@ export default function App() {
                           <div className="entry-actions">
                             {inv.status === "draft" ? (
                               <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
-                                {t("finance.issue")}
+                                {t("finance.sendInvoice")}
                               </button>
                             ) : null}
                             {inv.status === "issued" ? (
-                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
-                                {t("finance.markPaid")}
+                              <>
+                                <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
+                                  {t("finance.markPaid")}
+                                </button>
+                                <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "returned")}>
+                                  {t("finance.markReturned")}
+                                </button>
+                                {inv.pdf_path ? (
+                                  <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
+                                    {t("finance.downloadPdf")}
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : null}
+                            {inv.status === "paid" && inv.pdf_path ? (
+                              <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
+                                {t("finance.downloadPdf")}
+                              </button>
+                            ) : null}
+                            {inv.status === "returned" ? (
+                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "draft")}>
+                                {t("finance.reopenDraft")}
                               </button>
                             ) : null}
                           </div>
@@ -1979,6 +2259,91 @@ export default function App() {
                   )}
                 </section>
               </>
+            ) : null}
+
+            {activeView === "catalog" && isManager ? (
+              <section className="panel wide">
+                <h1>{t("catalog.title")}</h1>
+                <p>{t("catalog.intro")}</p>
+                {adminStatus ? <p className="status">{adminStatus}</p> : null}
+                {timeError ? <p className="status error">{timeError}</p> : null}
+                {catalogServices.length === 0 ? (
+                  <p className="status">{t("catalog.empty")}</p>
+                ) : (
+                  <ul className="entry-list">
+                    {catalogServices.map((s) => (
+                      <li key={`${s.service_id}-${s.version}`}>
+                        <div>
+                          <strong>{s.name.en || s.service_id}</strong>
+                          <div className="muted">
+                            {s.service_id} v{s.version} · {s.estimated_hours ?? "—"}h · €
+                            {s.list_price_eur?.toLocaleString() ?? "—"}
+                          </div>
+                        </div>
+                        <div className="entry-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingCatalogId(`${s.service_id}|${s.version}`);
+                              setCatalogForm({
+                                name_en: s.name.en || "",
+                                list_price_eur: String(s.list_price_eur ?? ""),
+                                estimated_hours: String(s.estimated_hours ?? ""),
+                              });
+                            }}
+                          >
+                            {t("catalog.edit")}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {editingCatalogId ? (
+                  <div className="customer-form">
+                    <h2>{t("catalog.editTitle")}</h2>
+                    <label htmlFor="catName">{t("catalog.name")}</label>
+                    <input
+                      id="catName"
+                      value={catalogForm.name_en}
+                      onChange={(e) => setCatalogForm((p) => ({ ...p, name_en: e.target.value }))}
+                    />
+                    <label htmlFor="catPrice">{t("catalog.listPrice")}</label>
+                    <input
+                      id="catPrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={catalogForm.list_price_eur}
+                      onChange={(e) => setCatalogForm((p) => ({ ...p, list_price_eur: e.target.value }))}
+                    />
+                    <label htmlFor="catHours">{t("catalog.typicalHours")}</label>
+                    <input
+                      id="catHours"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={catalogForm.estimated_hours}
+                      onChange={(e) => setCatalogForm((p) => ({ ...p, estimated_hours: e.target.value }))}
+                    />
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                          const [sid, ver] = editingCatalogId.split("|");
+                          void saveCatalogService(sid, ver);
+                        }}
+                      >
+                        {t("catalog.save")}
+                      </button>
+                      <button type="button" onClick={() => setEditingCatalogId(null)}>
+                        {t("customer.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
             ) : null}
 
             {activeView === "hours" ? (
@@ -2126,6 +2491,70 @@ export default function App() {
                       ))}
                     </ul>
                   )}
+                </section>
+
+                <section className="panel wide">
+                  <h2>{t("project.createTitle")}</h2>
+                  <p className="status">{t("project.createIntro")}</p>
+                  <label htmlFor="projectCustomerSearch">{t("project.customerSearch")}</label>
+                  <input
+                    id="projectCustomerSearch"
+                    value={projectCreateCustomerQuery}
+                    onChange={(e) => setProjectCreateCustomerQuery(e.target.value)}
+                    placeholder={t("project.customerSearchHint")}
+                  />
+                  {projectCreateCustomers.length > 0 ? (
+                    <ul className="entry-list">
+                      {projectCreateCustomers.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            className={projectCreateCustomerId === c.id ? "primary" : ""}
+                            onClick={() => setProjectCreateCustomerId(c.id)}
+                          >
+                            {c.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {projectBillable && !projectBillable.ok ? (
+                    <p className="status error">
+                      {t("project.notBillable", { missing: projectBillable.missing.join(", ") })}
+                    </p>
+                  ) : projectBillable?.ok ? (
+                    <p className="status">{t("project.billableOk")}</p>
+                  ) : null}
+                  <label htmlFor="projectService">{t("project.catalogOffering")}</label>
+                  <select
+                    id="projectService"
+                    value={projectCreateServiceId}
+                    onChange={(e) => setProjectCreateServiceId(e.target.value)}
+                  >
+                    <option value="">{t("project.pickService")}</option>
+                    {catalogServices.map((s) => (
+                      <option key={`${s.service_id}-${s.version}`} value={s.service_id}>
+                        {(s.name.en || s.service_id) +
+                          (s.list_price_eur != null ? ` · €${s.list_price_eur}` : "")}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="projectName">{t("project.nameOptional")}</label>
+                  <input
+                    id="projectName"
+                    value={projectCreateName}
+                    onChange={(e) => setProjectCreateName(e.target.value)}
+                  />
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={!projectCreateCustomerId || !projectCreateServiceId || !projectBillable?.ok}
+                      onClick={() => void createProjectFromCatalog()}
+                    >
+                      {t("project.create")}
+                    </button>
+                  </div>
                 </section>
 
                 <section className="panel wide">

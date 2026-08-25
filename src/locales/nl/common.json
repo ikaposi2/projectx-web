@@ -17,6 +17,7 @@
     "hours": "Urenregistratie",
     "admin": "Urenadministratie",
     "finance": "Finance",
+    "catalog": "Catalogus",
     "customers": "Klanten"
   },
   "time": {
@@ -175,7 +176,17 @@
     "invoiceParties": "Verkoper {{seller}} → Koper {{buyer}}",
     "vatLine": "Subtotaal €{{subtotal}} + BTW {{rate}}% (€{{vat}}) = €{{total}}",
     "issue": "Uitgeven",
+    "sendInvoice": "Factuur versturen",
     "markPaid": "Markeer betaald",
+    "markReturned": "Markeer retour",
+    "reopenDraft": "Heropen als concept",
+    "downloadPdf": "PDF downloaden",
+    "due": "Vervaldatum",
+    "dueLine": "Vervalt {{date}} ({{days}} dagen)",
+    "overdue": "Verlopen",
+    "overdueAlert": "{{count}} factuur/facturen verlopen — neem contact op met de klant",
+    "agendaTitle": "Vervaldatum facturen",
+    "agendaEmpty": "Geen facturen deze week en geen verlopen posten.",
     "internalTitle": "Intern (partners / reserve / BTW)",
     "internalIntro": "De bedrijfsreserve is exclusief BTW. Geïnde BTW staat op een aparte rekening tot de kwartaalaangifte.",
     "loading": "Finance laden…",
@@ -199,7 +210,8 @@
     "status": {
       "draft": "Concept",
       "issued": "Uitgegeven",
-      "paid": "Betaald"
+      "paid": "Betaald",
+      "returned": "Retour"
     },
     "kind": {
       "fixed_completion": "Vaste prijs afronding",
@@ -214,5 +226,30 @@
       "75": "75%",
       "complete": "Afgerond"
     }
+  },
+  "catalog": {
+    "title": "Dienstencatalogus",
+    "intro": "Vaste-prijsaanbod voor het aanmaken van klantprojecten.",
+    "empty": "Nog geen catalogus-aanbod.",
+    "edit": "Bewerken",
+    "editTitle": "Aanbod bewerken",
+    "name": "Naam (EN)",
+    "listPrice": "Catalogusprijs (€)",
+    "typicalHours": "Typische uren",
+    "save": "Aanbod opslaan",
+    "saved": "Catalogusaanbod opgeslagen."
+  },
+  "project": {
+    "createTitle": "Nieuw project uit catalogus",
+    "createIntro": "Kies een factureerbare klant en een catalogus-aanbod. BTW, factuuradres en contactgegevens zijn verplicht op de klant.",
+    "customerSearch": "Klant zoeken",
+    "customerSearchHint": "Typ een deel van bedrijfs- of contactnaam…",
+    "catalogOffering": "Catalogus-aanbod",
+    "pickService": "Selecteer een aanbod…",
+    "nameOptional": "Projectnaam (optioneel)",
+    "create": "Project aanmaken",
+    "created": "Project aangemaakt en beschikbaar voor uren.",
+    "billableOk": "Klant is klaar voor facturatie.",
+    "notBillable": "Klant mist verplichte facturatiegegevens: {{missing}}"
   }
 }
