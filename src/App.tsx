@@ -97,6 +97,22 @@ type ReserveSnapshot = {
   invoice_paid_eur: number;
 };
 
+type VatQuarter = {
+  year: number;
+  quarter: number;
+  label: string;
+  collected_eur: number;
+  remitted_eur: number;
+  outstanding_eur: number;
+  can_remit: boolean;
+};
+
+type VatAccount = {
+  balance_eur: number;
+  current_quarter: string;
+  quarters: VatQuarter[];
+};
+
 type CompensationEffect = {
   time_entry_id: string;
   partner_id: string;
@@ -335,6 +351,7 @@ export default function App() {
   });
   const [staffingDraft, setStaffingDraft] = useState<StaffingDraftRow[]>([]);
   const [reserve, setReserve] = useState<ReserveSnapshot | null>(null);
+  const [vatAccount, setVatAccount] = useState<VatAccount | null>(null);
   const [compensation, setCompensation] = useState<CompensationEffect[]>([]);
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([]);
   const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
@@ -523,17 +540,19 @@ export default function App() {
   const loadFinance = useCallback(async () => {
     if (!token) return;
     try {
-      const [reserveRes, compRes, invRes, candRes, companyRes] = await Promise.all([
+      const [reserveRes, vatRes, compRes, invRes, candRes, companyRes] = await Promise.all([
         fetch(`${FINANCE_API}/reserve`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${FINANCE_API}/vat`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
-      if (!reserveRes.ok || !compRes.ok || !invRes.ok || !candRes.ok || !companyRes.ok) {
+      if (!reserveRes.ok || !vatRes.ok || !compRes.ok || !invRes.ok || !candRes.ok || !companyRes.ok) {
         throw new Error("finance_unavailable");
       }
       setReserve((await reserveRes.json()) as ReserveSnapshot);
+      setVatAccount((await vatRes.json()) as VatAccount);
       setCompensation((await compRes.json()) as CompensationEffect[]);
       setInvoices((await invRes.json()) as FinanceInvoice[]);
       setBillingCandidates((await candRes.json()) as BillingCandidate[]);
@@ -1088,6 +1107,30 @@ export default function App() {
       setFinanceStatus(t("finance.compensationUndone"));
       await loadFinance();
       await Promise.all([loadEntries(), loadAdminEntries(), loadBookable()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function remitVat(year: number, quarter: number) {
+    if (!token) return;
+    setTimeError(null);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/vat/remit`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ year, quarter }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+      }
+      setVatAccount((await res.json()) as VatAccount);
+      setFinanceStatus(t("finance.vatRemitted"));
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -1854,6 +1897,48 @@ export default function App() {
                       })}
                     </p>
                   ) : null}
+                  {vatAccount ? (
+                    <>
+                      <h3>{t("finance.vatAccount")}</h3>
+                      <p className="status">{t("finance.vatIntro")}</p>
+                      <p className="status">
+                        {t("finance.vatBalance", {
+                          balance: vatAccount.balance_eur.toFixed(2),
+                          quarter: vatAccount.current_quarter,
+                        })}
+                      </p>
+                      {vatAccount.quarters.some((q) => q.collected_eur > 0 || q.remitted_eur > 0) ? (
+                        <ul className="entry-list">
+                          {vatAccount.quarters
+                            .filter((q) => q.collected_eur > 0 || q.remitted_eur > 0)
+                            .map((q) => (
+                              <li key={q.label}>
+                                <div>
+                                  <strong>{q.label}</strong>
+                                  <div className="muted">
+                                    {t("finance.vatQuarterLine", {
+                                      collected: q.collected_eur.toFixed(2),
+                                      remitted: q.remitted_eur.toFixed(2),
+                                      outstanding: q.outstanding_eur.toFixed(2),
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="entry-actions">
+                                  {q.can_remit ? (
+                                    <button type="button" onClick={() => void remitVat(q.year, q.quarter)}>
+                                      {t("finance.vatRemit")}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </li>
+                            ))}
+                        </ul>
+                      ) : (
+                        <p className="status">{t("finance.vatEmpty")}</p>
+                      )}
+                    </>
+                  ) : null}
+                  <h3>{t("finance.compensation")}</h3>
                   {compensation.length > 0 ? (
                     <ul className="entry-list">
                       {compensation.map((row) => (
