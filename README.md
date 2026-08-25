@@ -15,6 +15,7 @@ React + TypeScript + Vite SPA for Project X.
 | Projects | Create from catalog, manage budgets & staffing |
 | Finance | Invoices, reserve, VAT, compensation |
 | Catalog | Fixed-price offerings (CRUD) |
+| Resources | Internal/external consultants (senior, partner, rates) |
 | Customers | Customer records, billing fields |
 
 ## Run
