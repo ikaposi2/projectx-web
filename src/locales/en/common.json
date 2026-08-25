@@ -16,6 +16,7 @@
     "menu": "Main menu",
     "hours": "Hour reporting",
     "admin": "Hour administration",
+    "projects": "Projects",
     "finance": "Finance",
     "catalog": "Catalog",
     "customers": "Customers"
@@ -252,6 +253,7 @@
     "missingRequired": "Service ID and name are required."
   },
   "project": {
+    "pageIntro": "Create projects from catalog offerings and manage budgets, staffing, and progress.",
     "createTitle": "New project from catalog",
     "createIntro": "Pick a billable customer and a catalog offering. VAT, billing address, and contact details are required on the customer.",
     "customerSearch": "Search customer",

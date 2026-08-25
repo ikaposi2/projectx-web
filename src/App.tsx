@@ -231,7 +231,7 @@ type BillableCheck = {
   missing: string[];
 };
 
-type AppView = "hours" | "admin" | "customers" | "finance" | "catalog";
+type AppView = "hours" | "admin" | "customers" | "finance" | "catalog" | "projects";
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -648,8 +648,14 @@ export default function App() {
     if (!token || !user || view !== "admin") return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadAdminEntries();
+  }, [token, user, view, loadAdminEntries]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "projects") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
     void loadManagedProjects();
-  }, [token, user, view, loadAdminEntries, loadManagedProjects]);
+    void loadCatalog();
+  }, [token, user, view, loadManagedProjects, loadCatalog]);
 
   useEffect(() => {
     if (!token || !user || view !== "finance") return;
@@ -664,7 +670,7 @@ export default function App() {
   }, [token, user, view, loadCatalog]);
 
   useEffect(() => {
-    if (!token || view !== "admin" || !projectCreateCustomerQuery.trim()) {
+    if (!token || view !== "projects" || !projectCreateCustomerQuery.trim()) {
       setProjectCreateCustomers([]);
       return;
     }
@@ -713,11 +719,6 @@ export default function App() {
       }
     })();
   }, [token, projectCreateCustomerId]);
-
-  useEffect(() => {
-    if (!token || view !== "admin") return;
-    void loadCatalog();
-  }, [token, view, loadCatalog]);
 
   useEffect(() => {
     if (!token || view !== "customers") return;
@@ -1447,7 +1448,9 @@ export default function App() {
 
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const activeView: AppView =
-    (view === "admin" || view === "finance" || view === "catalog") && !isManager ? "hours" : view;
+    (view === "admin" || view === "finance" || view === "catalog" || view === "projects") && !isManager
+      ? "hours"
+      : view;
   const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
   const weekDateSet = new Set(weekDates);
   // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
@@ -1646,6 +1649,15 @@ export default function App() {
                 onClick={() => goToView("admin")}
               >
                 {t("nav.admin")}
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={view === "projects" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("projects")}
+              >
+                {t("nav.projects")}
               </button>
             ) : null}
             {isManager ? (
@@ -2654,6 +2666,17 @@ export default function App() {
                       ))}
                     </ul>
                   )}
+                </section>
+              </>
+            ) : null}
+
+            {activeView === "projects" && isManager ? (
+              <>
+                <section className="panel wide">
+                  <h1>{t("nav.projects")}</h1>
+                  <p>{t("project.pageIntro")}</p>
+                  {timeError ? <p className="status error">{timeError}</p> : null}
+                  {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 </section>
 
                 <section className="panel wide">

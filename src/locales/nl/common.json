@@ -16,6 +16,7 @@
     "menu": "Hoofdmenu",
     "hours": "Urenregistratie",
     "admin": "Urenadministratie",
+    "projects": "Projecten",
     "finance": "Finance",
     "catalog": "Catalogus",
     "customers": "Klanten"
@@ -252,6 +253,7 @@
     "missingRequired": "Service-ID en naam zijn verplicht."
   },
   "project": {
+    "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer budgetten, staffing en voortgang.",
     "createTitle": "Nieuw project uit catalogus",
     "createIntro": "Kies een factureerbare klant en een catalogus-aanbod. BTW, factuuradres en contactgegevens zijn verplicht op de klant.",
     "customerSearch": "Klant zoeken",
