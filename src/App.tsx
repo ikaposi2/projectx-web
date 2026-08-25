@@ -568,7 +568,7 @@ export default function App() {
   const loadManagedProjects = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${PROJECT_API}/projects/bookable`, {
+      const res = await fetch(`${PROJECT_API}/projects/bookable?include_complete=true`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(await res.text());
