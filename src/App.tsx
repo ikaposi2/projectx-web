@@ -139,6 +139,11 @@ type Customer = {
   id: string;
   name: string;
   status: "prospect" | "active" | "inactive";
+  is_msp: boolean;
+  parent_id: string | null;
+  parent_name?: string | null;
+  bill_to_customer_id?: string | null;
+  bill_to_name?: string | null;
   contact_name: string;
   contact_email: string | null;
   contact_phone: string | null;
@@ -147,6 +152,19 @@ type Customer = {
   postal_code: string | null;
   city: string | null;
   country: string | null;
+  vat_id: string | null;
+  bank_account: string | null;
+  coc_number: string | null;
+  payment_terms_days: number;
+  billing_same_as_address: boolean;
+  billing_name: string | null;
+  billing_contact_name: string | null;
+  billing_email: string | null;
+  billing_address_line1: string | null;
+  billing_address_line2: string | null;
+  billing_postal_code: string | null;
+  billing_city: string | null;
+  billing_country: string | null;
   technical_contact_name: string | null;
   technical_contact_email: string | null;
   technical_contact_phone: string | null;
@@ -155,6 +173,8 @@ type Customer = {
 
 const emptyCustomerForm = {
   name: "",
+  is_msp: false,
+  parent_id: "",
   contact_name: "",
   contact_email: "",
   contact_phone: "",
@@ -163,6 +183,19 @@ const emptyCustomerForm = {
   postal_code: "",
   city: "",
   country: "",
+  vat_id: "",
+  bank_account: "",
+  coc_number: "",
+  payment_terms_days: "30",
+  billing_same_as_address: true,
+  billing_name: "",
+  billing_contact_name: "",
+  billing_email: "",
+  billing_address_line1: "",
+  billing_address_line2: "",
+  billing_postal_code: "",
+  billing_city: "",
+  billing_country: "",
   technical_contact_name: "",
   technical_contact_email: "",
   technical_contact_phone: "",
@@ -215,6 +248,7 @@ export default function App() {
   const [projects, setProjects] = useState<BookableProject[]>([]);
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [mspCustomers, setMspCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
@@ -335,6 +369,7 @@ export default function App() {
       const term = query.trim();
       if (!term) {
         setCustomers([]);
+    setMspCustomers([]);
         setCustomerError(null);
         return;
       }
@@ -463,13 +498,27 @@ export default function App() {
     void loadFinance();
   }, [token, user, view, loadFinance]);
 
+  const loadMsps = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${CUSTOMER_API}/customers/msps`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setMspCustomers((await res.json()) as Customer[]);
+    } catch {
+      setMspCustomers([]);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token || view !== "customers") return;
+    void loadMsps();
     const handle = window.setTimeout(() => {
       void searchCustomers(customerQuery);
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [token, view, customerQuery, searchCustomers]);
+  }, [token, view, customerQuery, searchCustomers, loadMsps]);
 
   useEffect(() => {
     setDraftHours((prev) => {
@@ -610,7 +659,11 @@ export default function App() {
   function formatApiError(detail: unknown, fallback: string): string {
     if (typeof detail === "string") {
       if (detail === "has_open_projects") return t("customer.hasOpenProjects");
+      if (detail === "has_child_accounts") return t("customer.hasChildAccounts");
       if (detail === "project_service_unavailable") return t("customer.projectServiceUnavailable");
+      if (detail === "parent_not_msp") return t("customer.parentNotMsp");
+      if (detail === "parent_not_found") return t("customer.parentNotFound");
+      if (detail === "msp_cannot_have_parent") return t("customer.mspCannotHaveParent");
       return detail;
     }
     if (Array.isArray(detail)) {
@@ -624,6 +677,8 @@ export default function App() {
   function customerToForm(customer: Customer) {
     return {
       name: customer.name,
+      is_msp: Boolean(customer.is_msp),
+      parent_id: customer.parent_id ?? "",
       contact_name: customer.contact_name,
       contact_email: customer.contact_email ?? "",
       contact_phone: customer.contact_phone ?? "",
@@ -632,6 +687,19 @@ export default function App() {
       postal_code: customer.postal_code ?? "",
       city: customer.city ?? "",
       country: customer.country ?? "",
+      vat_id: customer.vat_id ?? "",
+      bank_account: customer.bank_account ?? "",
+      coc_number: customer.coc_number ?? "",
+      payment_terms_days: String(customer.payment_terms_days ?? 30),
+      billing_same_as_address: customer.billing_same_as_address !== false,
+      billing_name: customer.billing_name ?? "",
+      billing_contact_name: customer.billing_contact_name ?? "",
+      billing_email: customer.billing_email ?? "",
+      billing_address_line1: customer.billing_address_line1 ?? "",
+      billing_address_line2: customer.billing_address_line2 ?? "",
+      billing_postal_code: customer.billing_postal_code ?? "",
+      billing_city: customer.billing_city ?? "",
+      billing_country: customer.billing_country ?? "",
       technical_contact_name: customer.technical_contact_name ?? "",
       technical_contact_email: customer.technical_contact_email ?? "",
       technical_contact_phone: customer.technical_contact_phone ?? "",
@@ -662,6 +730,8 @@ export default function App() {
     const payload = {
       name: customerForm.name.trim(),
       status: "active" as const,
+      is_msp: customerForm.is_msp,
+      parent_id: customerForm.is_msp ? null : customerForm.parent_id.trim() || null,
       contact_name: customerForm.contact_name.trim(),
       contact_email: customerForm.contact_email.trim() || null,
       contact_phone: customerForm.contact_phone.trim() || null,
@@ -670,6 +740,27 @@ export default function App() {
       postal_code: customerForm.postal_code.trim() || null,
       city: customerForm.city.trim() || null,
       country: customerForm.country.trim() || null,
+      vat_id: customerForm.vat_id.trim() || null,
+      bank_account: customerForm.bank_account.trim() || null,
+      coc_number: customerForm.coc_number.trim() || null,
+      payment_terms_days: Number(customerForm.payment_terms_days) || 30,
+      billing_same_as_address: customerForm.billing_same_as_address,
+      billing_name: customerForm.billing_name.trim() || null,
+      billing_contact_name: customerForm.billing_contact_name.trim() || null,
+      billing_email: customerForm.billing_email.trim() || null,
+      billing_address_line1: customerForm.billing_same_as_address
+        ? null
+        : customerForm.billing_address_line1.trim() || null,
+      billing_address_line2: customerForm.billing_same_as_address
+        ? null
+        : customerForm.billing_address_line2.trim() || null,
+      billing_postal_code: customerForm.billing_same_as_address
+        ? null
+        : customerForm.billing_postal_code.trim() || null,
+      billing_city: customerForm.billing_same_as_address ? null : customerForm.billing_city.trim() || null,
+      billing_country: customerForm.billing_same_as_address
+        ? null
+        : customerForm.billing_country.trim() || null,
       technical_contact_name: customerForm.technical_contact_name.trim() || null,
       technical_contact_email: customerForm.technical_contact_email.trim() || null,
       technical_contact_phone: customerForm.technical_contact_phone.trim() || null,
@@ -693,7 +784,7 @@ export default function App() {
       }
       cancelEditCustomer();
       setCustomerQuery(payload.name);
-      await searchCustomers(payload.name);
+      await Promise.all([searchCustomers(payload.name), loadMsps()]);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
@@ -1186,9 +1277,27 @@ export default function App() {
                           <div>
                             <strong>{customer.name}</strong>
                             <div className="muted">
+                              {customer.is_msp ? t("customer.badgeMsp") : null}
+                              {customer.is_msp && customer.parent_name ? " · " : null}
+                              {customer.parent_name
+                                ? t("customer.childOf", { name: customer.parent_name })
+                                : null}
+                              {(customer.is_msp || customer.parent_name) && customer.contact_name
+                                ? " · "
+                                : null}
                               {customer.contact_name}
                               {customerChannel(customer) ? ` · ${customerChannel(customer)}` : ""}
                             </div>
+                            {customer.parent_id && customer.bill_to_name ? (
+                              <div className="muted">
+                                {t("customer.billedTo", { name: customer.bill_to_name })}
+                              </div>
+                            ) : null}
+                            {customer.vat_id ? (
+                              <div className="muted">
+                                {t("customer.vatId")}: {customer.vat_id}
+                              </div>
+                            ) : null}
                             {customerAddress(customer) ? (
                               <div className="muted">{customerAddress(customer)}</div>
                             ) : null}
@@ -1233,6 +1342,45 @@ export default function App() {
                       required
                       maxLength={200}
                     />
+                    <label className="checkbox-row" htmlFor="customerIsMsp">
+                      <input
+                        id="customerIsMsp"
+                        type="checkbox"
+                        checked={customerForm.is_msp}
+                        onChange={(e) =>
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            is_msp: e.target.checked,
+                            parent_id: e.target.checked ? "" : prev.parent_id,
+                          }))
+                        }
+                      />
+                      {t("customer.isMsp")}
+                    </label>
+                    {!customerForm.is_msp ? (
+                      <>
+                        <label htmlFor="customerParent">{t("customer.parentMsp")}</label>
+                        <select
+                          id="customerParent"
+                          value={customerForm.parent_id}
+                          onChange={(e) =>
+                            setCustomerForm((prev) => ({ ...prev, parent_id: e.target.value }))
+                          }
+                        >
+                          <option value="">{t("customer.parentNone")}</option>
+                          {mspCustomers
+                            .filter((m) => m.id !== editingCustomerId)
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="field-hint">{t("customer.parentHint")}</p>
+                      </>
+                    ) : (
+                      <p className="field-hint">{t("customer.mspHint")}</p>
+                    )}
                   </fieldset>
 
                   <fieldset className="fields-required">
@@ -1306,6 +1454,145 @@ export default function App() {
                       value={customerForm.country}
                       onChange={(e) => setCustomerForm((prev) => ({ ...prev, country: e.target.value }))}
                       maxLength={120}
+                    />
+                  </fieldset>
+
+                  <fieldset className="fields-optional">
+                    <legend>{t("customer.sectionBilling")}</legend>
+                    <label htmlFor="vatId">{t("customer.vatId")}</label>
+                    <input
+                      id="vatId"
+                      value={customerForm.vat_id}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, vat_id: e.target.value }))}
+                      maxLength={64}
+                    />
+                    <label htmlFor="cocNumber">{t("customer.cocNumber")}</label>
+                    <input
+                      id="cocNumber"
+                      value={customerForm.coc_number}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, coc_number: e.target.value }))}
+                      maxLength={64}
+                    />
+                    <label htmlFor="bankAccount">{t("customer.bankAccount")}</label>
+                    <input
+                      id="bankAccount"
+                      value={customerForm.bank_account}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, bank_account: e.target.value }))}
+                      maxLength={64}
+                    />
+                    <label htmlFor="paymentTerms">{t("customer.paymentTerms")}</label>
+                    <input
+                      id="paymentTerms"
+                      type="number"
+                      min="0"
+                      max="365"
+                      value={customerForm.payment_terms_days}
+                      onChange={(e) =>
+                        setCustomerForm((prev) => ({ ...prev, payment_terms_days: e.target.value }))
+                      }
+                    />
+                    <label htmlFor="billingName">{t("customer.billingName")}</label>
+                    <input
+                      id="billingName"
+                      value={customerForm.billing_name}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, billing_name: e.target.value }))}
+                      maxLength={200}
+                    />
+                    <label htmlFor="billingContact">{t("customer.billingContactName")}</label>
+                    <input
+                      id="billingContact"
+                      value={customerForm.billing_contact_name}
+                      onChange={(e) =>
+                        setCustomerForm((prev) => ({ ...prev, billing_contact_name: e.target.value }))
+                      }
+                      maxLength={200}
+                    />
+                    <label htmlFor="billingEmail">{t("customer.billingEmail")}</label>
+                    <input
+                      id="billingEmail"
+                      type="email"
+                      value={customerForm.billing_email}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, billing_email: e.target.value }))}
+                      maxLength={320}
+                    />
+                    <label className="checkbox-row" htmlFor="billingSame">
+                      <input
+                        id="billingSame"
+                        type="checkbox"
+                        checked={customerForm.billing_same_as_address}
+                        onChange={(e) =>
+                          setCustomerForm((prev) => ({
+                            ...prev,
+                            billing_same_as_address: e.target.checked,
+                          }))
+                        }
+                      />
+                      {t("customer.billingSameAsAddress")}
+                    </label>
+                    {!customerForm.billing_same_as_address ? (
+                      <>
+                        <label htmlFor="billingLine1">{t("customer.billingAddressLine1")}</label>
+                        <input
+                          id="billingLine1"
+                          value={customerForm.billing_address_line1}
+                          onChange={(e) =>
+                            setCustomerForm((prev) => ({ ...prev, billing_address_line1: e.target.value }))
+                          }
+                          maxLength={200}
+                        />
+                        <label htmlFor="billingLine2">{t("customer.billingAddressLine2")}</label>
+                        <input
+                          id="billingLine2"
+                          value={customerForm.billing_address_line2}
+                          onChange={(e) =>
+                            setCustomerForm((prev) => ({ ...prev, billing_address_line2: e.target.value }))
+                          }
+                          maxLength={200}
+                        />
+                        <div className="form-row">
+                          <div>
+                            <label htmlFor="billingPostal">{t("customer.billingPostalCode")}</label>
+                            <input
+                              id="billingPostal"
+                              value={customerForm.billing_postal_code}
+                              onChange={(e) =>
+                                setCustomerForm((prev) => ({
+                                  ...prev,
+                                  billing_postal_code: e.target.value,
+                                }))
+                              }
+                              maxLength={32}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="billingCity">{t("customer.billingCity")}</label>
+                            <input
+                              id="billingCity"
+                              value={customerForm.billing_city}
+                              onChange={(e) =>
+                                setCustomerForm((prev) => ({ ...prev, billing_city: e.target.value }))
+                              }
+                              maxLength={120}
+                            />
+                          </div>
+                        </div>
+                        <label htmlFor="billingCountry">{t("customer.billingCountry")}</label>
+                        <input
+                          id="billingCountry"
+                          value={customerForm.billing_country}
+                          onChange={(e) =>
+                            setCustomerForm((prev) => ({ ...prev, billing_country: e.target.value }))
+                          }
+                          maxLength={120}
+                        />
+                      </>
+                    ) : null}
+                    <label htmlFor="customerNotes">{t("customer.notes")}</label>
+                    <textarea
+                      id="customerNotes"
+                      value={customerForm.notes}
+                      onChange={(e) => setCustomerForm((prev) => ({ ...prev, notes: e.target.value }))}
+                      rows={3}
                     />
                   </fieldset>
 

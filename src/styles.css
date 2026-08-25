@@ -469,6 +469,19 @@ body {
   font-size: 0.85rem;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.35rem 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
 .entry-list {
   list-style: none;
   margin: 0;
