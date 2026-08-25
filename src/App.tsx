@@ -881,12 +881,14 @@ export default function App() {
           onFocus={() => {
             if (locked) return;
             activeCellKey.current = key;
+          }}
+          onDoubleClick={() => {
+            if (locked) return;
+            activeCellKey.current = key;
             setDraftHours((prev) => {
               const current = prev[key];
-              if (current === undefined || current.trim() === "") {
-                return { ...prev, [key]: "8" };
-              }
-              return prev;
+              if (current !== undefined && current.trim() !== "") return prev;
+              return { ...prev, [key]: "8" };
             });
           }}
           onChange={(e) => {
@@ -895,8 +897,7 @@ export default function App() {
             setDraftHours((prev) => ({ ...prev, [key]: value.replace(",", ".") }));
           }}
           onBlur={(e) => {
-            const typed = e.currentTarget.value.trim();
-            const hours = typed === "" ? (entry ? "" : "8") : typed;
+            const hours = e.currentTarget.value.trim();
             activeCellKey.current = null;
             void persistCell(row, date, hours);
           }}
