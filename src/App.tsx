@@ -784,7 +784,7 @@ export default function App() {
                 <p>{t("customer.intro")}</p>
                 <form className="customer-form" onSubmit={(e) => void saveCustomer(e)}>
                   <h2>{editingCustomerId ? t("customer.editTitle") : t("customer.addTitle")}</h2>
-                  <fieldset>
+                  <fieldset className="fields-required">
                     <legend>{t("customer.sectionCompany")}</legend>
                     <label htmlFor="customerName">{t("customer.name")}</label>
                     <input
@@ -796,7 +796,7 @@ export default function App() {
                     />
                   </fieldset>
 
-                  <fieldset>
+                  <fieldset className="fields-required">
                     <legend>{t("customer.sectionPrimary")}</legend>
                     <label htmlFor="contactName">{t("customer.contactName")}</label>
                     <input
@@ -825,7 +825,7 @@ export default function App() {
                     <p className="field-hint">{t("customer.channelHint")}</p>
                   </fieldset>
 
-                  <fieldset>
+                  <fieldset className="fields-optional">
                     <legend>{t("customer.sectionAddress")}</legend>
                     <label htmlFor="addressLine1">{t("customer.addressLine1")}</label>
                     <input
@@ -870,7 +870,7 @@ export default function App() {
                     />
                   </fieldset>
 
-                  <fieldset>
+                  <fieldset className="fields-optional">
                     <legend>{t("customer.sectionTechnical")}</legend>
                     <label htmlFor="techName">{t("customer.technicalContactName")}</label>
                     <input

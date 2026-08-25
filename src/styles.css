@@ -398,18 +398,46 @@ body {
 .customer-form fieldset {
   margin: 0;
   padding: 0.85rem 1rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid transparent;
+}
+
+.customer-form fieldset.fields-required {
+  background: rgba(11, 61, 46, 0.72);
+  border-color: rgba(196, 163, 90, 0.35);
+}
+
+.customer-form fieldset.fields-optional {
+  background: rgba(26, 92, 69, 0.28);
+  border-color: rgba(183, 196, 188, 0.22);
 }
 
 .customer-form legend {
   padding: 0 0.35rem;
-  color: var(--muted);
+  color: var(--text);
   font-size: 0.85rem;
+}
+
+.customer-form fieldset.fields-required legend {
+  color: #e8f2ec;
+}
+
+.customer-form fieldset.fields-optional legend {
+  color: var(--muted);
 }
 
 .customer-form input {
   width: 100%;
   margin-bottom: 0.75rem;
+}
+
+.customer-form .fields-required input {
+  background: rgba(0, 0, 0, 0.28);
+  border-color: rgba(196, 163, 90, 0.35);
+}
+
+.customer-form .fields-optional input {
+  background: rgba(0, 0, 0, 0.16);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .customer-form .actions {
