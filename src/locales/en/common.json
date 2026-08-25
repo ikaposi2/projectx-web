@@ -184,7 +184,11 @@
     "chargebackLine": "Chargeback {{hours}}h × €{{rate}}/h = €{{eur}}",
     "compensation": "Partner compensation",
     "compensationEmpty": "No approved time entries in the finance ledger yet.",
-    "compensationLine": "Billable {{billable}}h · chargeback {{chargeback}}h (€{{eur}})",
+    "compensationBillable": "Billable {{hours}}h",
+    "compensationChargeback": "Chargeback {{hours}}h × €{{rate}}/h = €{{eur}}",
+    "compensationUndo": "Undo",
+    "compensationUndone": "Compensation entry undone; hours reopened for editing.",
+    "compensationInvoiced": "Already on an invoice — undo blocked.",
     "status": {
       "draft": "Draft",
       "issued": "Issued",

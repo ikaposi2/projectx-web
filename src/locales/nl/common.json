@@ -184,7 +184,11 @@
     "chargebackLine": "Chargeback {{hours}}u × €{{rate}}/u = €{{eur}}",
     "compensation": "Partnercompensatie",
     "compensationEmpty": "Nog geen goedgekeurde uren in het finance-ledger.",
-    "compensationLine": "Billable {{billable}}u · chargeback {{chargeback}}u (€{{eur}})",
+    "compensationBillable": "Billable {{hours}}u",
+    "compensationChargeback": "Chargeback {{hours}}u × €{{rate}}/u = €{{eur}}",
+    "compensationUndo": "Ongedaan maken",
+    "compensationUndone": "Compensatie-entry ongedaan gemaakt; uren weer open voor bewerking.",
+    "compensationInvoiced": "Staat al op een factuur — ongedaan maken geblokkeerd.",
     "status": {
       "draft": "Concept",
       "issued": "Uitgegeven",

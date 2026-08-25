@@ -97,11 +97,17 @@ type ReserveSnapshot = {
   invoice_paid_eur: number;
 };
 
-type CompensationRow = {
+type CompensationEffect = {
+  time_entry_id: string;
   partner_id: string;
-  billable_hours: number;
-  chargeback_hours: number;
-  chargeback_eur: number;
+  partner_name: string;
+  project_id?: string | null;
+  classification: string;
+  hours: number;
+  rate_eur: number;
+  amount_eur: number;
+  can_undo: boolean;
+  updated_at?: string | null;
 };
 
 type FinanceInvoice = {
@@ -329,7 +335,7 @@ export default function App() {
   });
   const [staffingDraft, setStaffingDraft] = useState<StaffingDraftRow[]>([]);
   const [reserve, setReserve] = useState<ReserveSnapshot | null>(null);
-  const [compensation, setCompensation] = useState<CompensationRow[]>([]);
+  const [compensation, setCompensation] = useState<CompensationEffect[]>([]);
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([]);
   const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
@@ -528,7 +534,7 @@ export default function App() {
         throw new Error("finance_unavailable");
       }
       setReserve((await reserveRes.json()) as ReserveSnapshot);
-      setCompensation((await compRes.json()) as CompensationRow[]);
+      setCompensation((await compRes.json()) as CompensationEffect[]);
       setInvoices((await invRes.json()) as FinanceInvoice[]);
       setBillingCandidates((await candRes.json()) as BillingCandidate[]);
       setCompanyProfile((await companyRes.json()) as CompanyProfile);
@@ -1061,6 +1067,27 @@ export default function App() {
       }
       setFinanceStatus(t("finance.invoiceUpdated"));
       await loadFinance();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function undoCompensation(timeEntryId: string) {
+    if (!token) return;
+    setTimeError(null);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/compensation/${timeEntryId}/undo`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+      }
+      setFinanceStatus(t("finance.compensationUndone"));
+      await loadFinance();
+      await Promise.all([loadEntries(), loadAdminEntries(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -1830,16 +1857,34 @@ export default function App() {
                   {compensation.length > 0 ? (
                     <ul className="entry-list">
                       {compensation.map((row) => (
-                        <li key={row.partner_id}>
+                        <li key={row.time_entry_id}>
                           <div>
-                            <strong>{row.partner_id}</strong>
+                            <strong>{row.partner_name}</strong>
                             <div className="muted">
-                              {t("finance.compensationLine", {
-                                billable: row.billable_hours,
-                                chargeback: row.chargeback_hours,
-                                eur: row.chargeback_eur.toFixed(2),
-                              })}
+                              {t(
+                                row.classification === "approved_non_billable"
+                                  ? "finance.compensationChargeback"
+                                  : "finance.compensationBillable",
+                                {
+                                  hours: row.hours,
+                                  rate: row.rate_eur.toFixed(2),
+                                  eur: row.amount_eur.toFixed(2),
+                                },
+                              )}
+                              {row.project_id ? ` · ${rowLabel(row.project_id)}` : ""}
                             </div>
+                            {!row.can_undo ? (
+                              <div className="muted">{t("finance.compensationInvoiced")}</div>
+                            ) : null}
+                          </div>
+                          <div className="entry-actions">
+                            <button
+                              type="button"
+                              disabled={!row.can_undo}
+                              onClick={() => void undoCompensation(row.time_entry_id)}
+                            >
+                              {t("finance.compensationUndo")}
+                            </button>
                           </div>
                         </li>
                       ))}
