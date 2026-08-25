@@ -248,7 +248,6 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
         setCustomers((await res.json()) as Customer[]);
-        setCustomerError(null);
       } catch (err) {
         setCustomerError(err instanceof Error ? err.message : "error");
       }
@@ -811,10 +810,14 @@ export default function App() {
                     id="customerSearch"
                     type="search"
                     value={customerQuery}
-                    onChange={(e) => setCustomerQuery(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerError(null);
+                      setCustomerQuery(e.target.value);
+                    }}
                     placeholder={t("customer.searchPlaceholder")}
                     autoComplete="off"
                   />
+                  {customerError ? <p className="status error">{customerError}</p> : null}
                   {!customerQuery.trim() ? (
                     <p className="status">{t("customer.searchHint")}</p>
                   ) : customers.length === 0 ? (
@@ -992,8 +995,8 @@ export default function App() {
                       </button>
                     ) : null}
                   </div>
+                  {customerError ? <p className="status error">{customerError}</p> : null}
                 </form>
-                {customerError && <p className="status error">{customerError}</p>}
               </section>
             ) : null}
 
