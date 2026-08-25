@@ -1216,6 +1216,27 @@ export default function App() {
     }
   }
 
+  async function deleteInvoice(id: string, invoiceNumber: string) {
+    if (!token) return;
+    if (!window.confirm(t("finance.deleteInvoiceConfirm", { number: invoiceNumber }))) return;
+    setTimeError(null);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/invoices/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+      }
+      setFinanceStatus(t("finance.invoiceDeleted"));
+      await loadFinance();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function undoCompensation(timeEntryId: string) {
     if (!token) return;
     setTimeError(null);
@@ -2214,6 +2235,11 @@ export default function App() {
                                 buyer: inv.customer_name,
                               })}
                             </div>
+                            {inv.buyer_address ? (
+                              <div className="muted">{inv.buyer_address.replace(/\n/g, " · ")}</div>
+                            ) : (
+                              <div className="muted">{t("finance.buyerAddressMissing")}</div>
+                            )}
                             {inv.lines?.map((line) => (
                               <div key={line.id} className="muted">
                                 {line.description}: {line.quantity}
@@ -2232,9 +2258,14 @@ export default function App() {
                           </div>
                           <div className="entry-actions">
                             {inv.status === "draft" ? (
-                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
-                                {t("finance.sendInvoice")}
-                              </button>
+                              <>
+                                <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
+                                  {t("finance.sendInvoice")}
+                                </button>
+                                <button type="button" onClick={() => void deleteInvoice(inv.id, inv.invoice_number)}>
+                                  {t("finance.deleteInvoice")}
+                                </button>
+                              </>
                             ) : null}
                             {inv.status === "issued" ? (
                               <>
@@ -2257,8 +2288,8 @@ export default function App() {
                               </button>
                             ) : null}
                             {inv.status === "returned" ? (
-                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "draft")}>
-                                {t("finance.reopenDraft")}
+                              <button type="button" onClick={() => void deleteInvoice(inv.id, inv.invoice_number)}>
+                                {t("finance.deleteInvoice")}
                               </button>
                             ) : null}
                           </div>
