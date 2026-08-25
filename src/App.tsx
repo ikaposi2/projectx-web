@@ -524,7 +524,8 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       cancelEditCustomer();
-      await searchCustomers(customerQuery);
+      setCustomerQuery(payload.name);
+      await searchCustomers(payload.name);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
