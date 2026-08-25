@@ -83,13 +83,14 @@
     "sectionPrimary": "Primair contact",
     "sectionAddress": "Adres (optioneel)",
     "sectionTechnical": "Technisch contact (optioneel)",
+    "addTitle": "Nieuwe klant",
+    "editTitle": "Klant bewerken",
     "add": "Toevoegen",
-    "empty": "Nog geen klanten.",
-    "deactivate": "Deactiveren",
-    "status": {
-      "prospect": "prospect",
-      "active": "actief",
-      "inactive": "inactief"
-    }
+    "save": "Opslaan",
+    "edit": "Bewerken",
+    "cancel": "Annuleren",
+    "delete": "Verwijderen",
+    "deleteConfirm": "Klant “{{name}}” verwijderen?",
+    "empty": "Nog geen klanten."
   }
 }

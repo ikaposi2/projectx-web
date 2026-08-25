@@ -83,13 +83,14 @@
     "sectionPrimary": "Primary contact",
     "sectionAddress": "Address (optional)",
     "sectionTechnical": "Technical contact (optional)",
+    "addTitle": "New customer",
+    "editTitle": "Edit customer",
     "add": "Add",
-    "empty": "No customers yet.",
-    "deactivate": "Deactivate",
-    "status": {
-      "prospect": "prospect",
-      "active": "active",
-      "inactive": "inactive"
-    }
+    "save": "Save",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleteConfirm": "Delete customer “{{name}}”?",
+    "empty": "No customers yet."
   }
 }

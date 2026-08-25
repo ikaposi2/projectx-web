@@ -141,6 +141,7 @@ export default function App() {
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
@@ -435,7 +436,37 @@ export default function App() {
     return fallback;
   }
 
-  async function createCustomer(e: FormEvent) {
+  function customerToForm(customer: Customer) {
+    return {
+      name: customer.name,
+      contact_name: customer.contact_name,
+      contact_email: customer.contact_email ?? "",
+      contact_phone: customer.contact_phone ?? "",
+      address_line1: customer.address_line1 ?? "",
+      address_line2: customer.address_line2 ?? "",
+      postal_code: customer.postal_code ?? "",
+      city: customer.city ?? "",
+      country: customer.country ?? "",
+      technical_contact_name: customer.technical_contact_name ?? "",
+      technical_contact_email: customer.technical_contact_email ?? "",
+      technical_contact_phone: customer.technical_contact_phone ?? "",
+      notes: customer.notes ?? "",
+    };
+  }
+
+  function startEditCustomer(customer: Customer) {
+    setEditingCustomerId(customer.id);
+    setCustomerForm(customerToForm(customer));
+    setCustomerError(null);
+  }
+
+  function cancelEditCustomer() {
+    setEditingCustomerId(null);
+    setCustomerForm(emptyCustomerForm);
+    setCustomerError(null);
+  }
+
+  async function saveCustomer(e: FormEvent) {
     e.preventDefault();
     if (!token || !customerForm.name.trim() || !customerForm.contact_name.trim()) return;
     if (!customerForm.contact_email.trim() && !customerForm.contact_phone.trim()) {
@@ -443,35 +474,39 @@ export default function App() {
       return;
     }
     setCustomerError(null);
+    const payload = {
+      name: customerForm.name.trim(),
+      status: "active" as const,
+      contact_name: customerForm.contact_name.trim(),
+      contact_email: customerForm.contact_email.trim() || null,
+      contact_phone: customerForm.contact_phone.trim() || null,
+      address_line1: customerForm.address_line1.trim() || null,
+      address_line2: customerForm.address_line2.trim() || null,
+      postal_code: customerForm.postal_code.trim() || null,
+      city: customerForm.city.trim() || null,
+      country: customerForm.country.trim() || null,
+      technical_contact_name: customerForm.technical_contact_name.trim() || null,
+      technical_contact_email: customerForm.technical_contact_email.trim() || null,
+      technical_contact_phone: customerForm.technical_contact_phone.trim() || null,
+      notes: customerForm.notes.trim() || null,
+    };
     try {
-      const res = await fetch(`${CUSTOMER_API}/customers`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+      const res = await fetch(
+        editingCustomerId ? `${CUSTOMER_API}/customers/${editingCustomerId}` : `${CUSTOMER_API}/customers`,
+        {
+          method: editingCustomerId ? "PATCH" : "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify({
-          name: customerForm.name.trim(),
-          status: "active",
-          contact_name: customerForm.contact_name.trim(),
-          contact_email: customerForm.contact_email.trim() || null,
-          contact_phone: customerForm.contact_phone.trim() || null,
-          address_line1: customerForm.address_line1.trim() || null,
-          address_line2: customerForm.address_line2.trim() || null,
-          postal_code: customerForm.postal_code.trim() || null,
-          city: customerForm.city.trim() || null,
-          country: customerForm.country.trim() || null,
-          technical_contact_name: customerForm.technical_contact_name.trim() || null,
-          technical_contact_email: customerForm.technical_contact_email.trim() || null,
-          technical_contact_phone: customerForm.technical_contact_phone.trim() || null,
-          notes: customerForm.notes.trim() || null,
-        }),
-      });
+      );
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
-      setCustomerForm(emptyCustomerForm);
+      cancelEditCustomer();
       await loadCustomers();
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
@@ -490,8 +525,9 @@ export default function App() {
     return line || null;
   }
 
-  async function deactivateCustomer(id: string) {
+  async function deleteCustomer(id: string, name: string) {
     if (!token) return;
+    if (!window.confirm(t("customer.deleteConfirm", { name }))) return;
     setCustomerError(null);
     try {
       const res = await fetch(`${CUSTOMER_API}/customers/${id}`, {
@@ -500,8 +536,9 @@ export default function App() {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? res.statusText);
+        throw new Error(formatApiError(detail.detail, res.statusText));
       }
+      if (editingCustomerId === id) cancelEditCustomer();
       await loadCustomers();
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
@@ -745,7 +782,8 @@ export default function App() {
               <section className="panel wide">
                 <h1>{t("customer.title")}</h1>
                 <p>{t("customer.intro")}</p>
-                <form className="customer-form" onSubmit={(e) => void createCustomer(e)}>
+                <form className="customer-form" onSubmit={(e) => void saveCustomer(e)}>
+                  <h2>{editingCustomerId ? t("customer.editTitle") : t("customer.addTitle")}</h2>
                   <fieldset>
                     <legend>{t("customer.sectionCompany")}</legend>
                     <label htmlFor="customerName">{t("customer.name")}</label>
@@ -867,8 +905,13 @@ export default function App() {
 
                   <div className="actions">
                     <button className="primary" type="submit">
-                      {t("customer.add")}
+                      {editingCustomerId ? t("customer.save") : t("customer.add")}
                     </button>
+                    {editingCustomerId ? (
+                      <button type="button" onClick={cancelEditCustomer}>
+                        {t("customer.cancel")}
+                      </button>
+                    ) : null}
                   </div>
                 </form>
                 {customerError && <p className="status error">{customerError}</p>}
@@ -880,7 +923,6 @@ export default function App() {
                       <li key={customer.id}>
                         <div>
                           <strong>{customer.name}</strong>
-                          <span className="muted"> — {t(`customer.status.${customer.status}`)}</span>
                           <div className="muted">
                             {customer.contact_name}
                             {customerChannel(customer) ? ` · ${customerChannel(customer)}` : ""}
@@ -903,11 +945,14 @@ export default function App() {
                             </div>
                           ) : null}
                         </div>
-                        {customer.status !== "inactive" ? (
-                          <button type="button" onClick={() => void deactivateCustomer(customer.id)}>
-                            {t("customer.deactivate")}
+                        <div className="entry-actions">
+                          <button type="button" onClick={() => startEditCustomer(customer)}>
+                            {t("customer.edit")}
                           </button>
-                        ) : null}
+                          <button type="button" onClick={() => void deleteCustomer(customer.id, customer.name)}>
+                            {t("customer.delete")}
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
