@@ -289,7 +289,7 @@
     "invalidRates": "Enter a valid billable rate (> 0) and internal rate (≥ 0)."
   },
   "project": {
-    "pageIntro": "Create projects from catalog offerings and manage budgets, staffing, and progress.",
+    "pageIntro": "Create projects from catalog offerings and manage funnel stage, budgets, staffing, and progress.",
     "createTitle": "New project from catalog",
     "createIntro": "Pick a billable customer and a catalog offering. VAT, billing address, and contact details are required on the customer.",
     "customerSearch": "Search customer",
@@ -298,8 +298,27 @@
     "pickService": "Select an offering…",
     "nameOptional": "Project name (optional)",
     "create": "Create project",
-    "created": "Project created and available for hour booking.",
+    "created": "Project created at Ordered. Advance the funnel to In delivery before booking hours.",
     "billableOk": "Customer is ready for billing.",
-    "notBillable": "Customer missing required billing data: {{missing}}"
+    "notBillable": "Customer missing required billing data: {{missing}}",
+    "engagementFixed": "Fixed price",
+    "engagementTm": "Time & materials",
+    "kickoffAt": "Kickoff",
+    "kickoffHint": "Optional until agenda (Phase 3). Setting a date while Ordered moves the stage to Kickoff planned.",
+    "advanceTo": "→ {{stage}}",
+    "funnelAdvanced": "Stage updated to {{stage}}.",
+    "invalidFunnelTransition": "That stage change is not allowed from the current stage.",
+    "invalidFunnelStatus": "Unknown funnel stage.",
+    "funnel": {
+      "registered": "Registered",
+      "ordered": "Ordered",
+      "kickoff_planned": "Kickoff planned",
+      "validated": "Validated",
+      "in_delivery": "In delivery",
+      "finalizing": "Finalizing",
+      "invoiced": "Invoiced",
+      "paid": "Paid",
+      "closed": "Closed"
+    }
   }
 }

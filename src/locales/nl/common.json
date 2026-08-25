@@ -289,7 +289,7 @@
     "invalidRates": "Voer een geldig factureertarief (> 0) en intern tarief (≥ 0) in."
   },
   "project": {
-    "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer budgetten, staffing en voortgang.",
+    "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer funnel-fase, budgetten, staffing en voortgang.",
     "createTitle": "Nieuw project uit catalogus",
     "createIntro": "Kies een factureerbare klant en een catalogus-aanbod. BTW, factuuradres en contactgegevens zijn verplicht op de klant.",
     "customerSearch": "Klant zoeken",
@@ -298,8 +298,27 @@
     "pickService": "Selecteer een aanbod…",
     "nameOptional": "Projectnaam (optioneel)",
     "create": "Project aanmaken",
-    "created": "Project aangemaakt en beschikbaar voor uren.",
+    "created": "Project aangemaakt in fase Ordered. Zet de funnel op In delivery voordat uren worden geboekt.",
     "billableOk": "Klant is klaar voor facturatie.",
-    "notBillable": "Klant mist verplichte facturatiegegevens: {{missing}}"
+    "notBillable": "Klant mist verplichte facturatiegegevens: {{missing}}",
+    "engagementFixed": "Vaste prijs",
+    "engagementTm": "Uurtarief (T&M)",
+    "kickoffAt": "Kickoff",
+    "kickoffHint": "Optioneel tot agenda (fase 3). Een datum zetten vanuit Ordered zet de fase op Kickoff gepland.",
+    "advanceTo": "→ {{stage}}",
+    "funnelAdvanced": "Fase bijgewerkt naar {{stage}}.",
+    "invalidFunnelTransition": "Die fasewijziging is niet toegestaan vanuit de huidige fase.",
+    "invalidFunnelStatus": "Onbekende funnel-fase.",
+    "funnel": {
+      "registered": "Geregistreerd",
+      "ordered": "Besteld",
+      "kickoff_planned": "Kickoff gepland",
+      "validated": "Gevalideerd",
+      "in_delivery": "In oplevering",
+      "finalizing": "Afronden",
+      "invoiced": "Gefactureerd",
+      "paid": "Betaald",
+      "closed": "Gesloten"
+    }
   }
 }

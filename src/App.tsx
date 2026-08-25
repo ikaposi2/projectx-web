@@ -81,6 +81,10 @@ type ProjectDetail = {
   consultancy_budget_eur: number;
   progress?: string;
   report_url?: string | null;
+  funnel_status?: string;
+  engagement_type?: "fixed" | "tm";
+  kickoff_at?: string | null;
+  next_funnel?: string[];
   staffing: ProjectStaffing[];
 };
 
@@ -339,6 +343,24 @@ function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** datetime-local value from ISO (local timezone). */
+function toDateTimeLocalValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** ISO string from datetime-local, or null if empty. */
+function fromDateTimeLocalValue(local: string): string | null {
+  const v = local.trim();
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 function formatWeekRange(monday: Date, locale: string): string {
   const sunday = addDays(monday, 6);
   const fmt = new Intl.DateTimeFormat(locale.startsWith("en") ? "en-GB" : "nl-NL", {
@@ -392,6 +414,7 @@ export default function App() {
     overhead_fixed_eur: "0",
     progress: "none",
     report_url: "",
+    kickoff_at: "",
   });
   const [staffingDraft, setStaffingDraft] = useState<StaffingDraftRow[]>([]);
   const [reserve, setReserve] = useState<ReserveSnapshot | null>(null);
@@ -916,6 +939,8 @@ export default function App() {
       if (detail === "parent_not_msp") return t("customer.parentNotMsp");
       if (detail === "parent_not_found") return t("customer.parentNotFound");
       if (detail === "msp_cannot_have_parent") return t("customer.mspCannotHaveParent");
+      if (detail === "invalid_funnel_transition") return t("project.invalidFunnelTransition");
+      if (detail === "invalid_funnel_status") return t("project.invalidFunnelStatus");
       return detail;
     }
     if (Array.isArray(detail)) {
@@ -1150,6 +1175,7 @@ export default function App() {
       overhead_fixed_eur: String(project.overhead_fixed_eur ?? 0),
       progress: project.progress || "none",
       report_url: project.report_url || "",
+      kickoff_at: toDateTimeLocalValue(project.kickoff_at),
     });
     setStaffingDraft(
       project.staffing.length
@@ -1190,6 +1216,7 @@ export default function App() {
           overhead_fixed_eur: Number(budgetForm.overhead_fixed_eur) || 0,
           progress: budgetForm.progress,
           report_url: budgetForm.progress === "complete" ? budgetForm.report_url.trim() || null : null,
+          kickoff_at: fromDateTimeLocalValue(budgetForm.kickoff_at),
           staffing: staffingDraft.map((s) => ({
             display_name: s.display_name.trim(),
             rate_eur: Number(s.rate_eur) || 0,
@@ -1201,10 +1228,43 @@ export default function App() {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+        throw new Error(formatApiError(detail.detail, res.statusText));
       }
       setAdminStatus(t("budget.saved"));
       setEditingProjectId(null);
+      await Promise.all([loadManagedProjects(), loadBookable()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function advanceProjectFunnel(projectId: string, funnelStatus: string) {
+    if (!token) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    const project = managedProjects.find((p) => p.id === projectId);
+    const kickoff =
+      funnelStatus === "kickoff_planned"
+        ? fromDateTimeLocalValue(budgetForm.kickoff_at) || project?.kickoff_at || null
+        : undefined;
+    try {
+      const res = await fetch(`${PROJECT_API}/projects/${projectId}/funnel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          funnel_status: funnelStatus,
+          ...(kickoff ? { kickoff_at: kickoff } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setAdminStatus(t("project.funnelAdvanced", { stage: t(`project.funnel.${funnelStatus}`) }));
+      if (editingProjectId === projectId) setEditingProjectId(null);
       await Promise.all([loadManagedProjects(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -3039,24 +3099,46 @@ export default function App() {
                   <h2>{t("budget.projectsTitle")}</h2>
                   <p className="status">{t("budget.projectsIntro")}</p>
                   <ul className="entry-list">
-                    {managedProjects.map((project) => (
+                    {managedProjects.map((project) => {
+                      const stage = project.funnel_status || "ordered";
+                      const next = project.next_funnel || [];
+                      return (
                       <li key={project.id}>
                         <div>
                           <strong>
                             {project.customer_name} · {project.name}
                           </strong>
                           <div className="muted">
+                            {t(`project.funnel.${stage}`)}
+                            {" · "}
+                            {project.engagement_type === "tm"
+                              ? t("project.engagementTm")
+                              : t("project.engagementFixed")}
+                            {" · "}
                             €{project.fixed_price_eur} → €{project.consultancy_budget_eur} ·{" "}
                             {project.contracted_hours}h ({t("time.remaining", { hours: project.remaining_hours })})
+                            {project.kickoff_at
+                              ? ` · ${t("project.kickoffAt")}: ${new Date(project.kickoff_at).toLocaleString()}`
+                              : ""}
                           </div>
                         </div>
                         <div className="entry-actions">
+                          {next.map((target) => (
+                            <button
+                              key={target}
+                              type="button"
+                              onClick={() => void advanceProjectFunnel(project.id, target)}
+                            >
+                              {t("project.advanceTo", { stage: t(`project.funnel.${target}`) })}
+                            </button>
+                          ))}
                           <button type="button" onClick={() => startEditProject(project)}>
                             {t("budget.edit")}
                           </button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
 
                   {editingProjectId ? (
@@ -3125,6 +3207,14 @@ export default function App() {
                       ))}
 
                       <h3>{t("budget.progress")}</h3>
+                      <label htmlFor="projectKickoff">{t("project.kickoffAt")}</label>
+                      <input
+                        id="projectKickoff"
+                        type="datetime-local"
+                        value={budgetForm.kickoff_at}
+                        onChange={(e) => setBudgetForm((p) => ({ ...p, kickoff_at: e.target.value }))}
+                      />
+                      <p className="field-hint">{t("project.kickoffHint")}</p>
                       <label htmlFor="projectProgress">{t("budget.progressLabel")}</label>
                       <select
                         id="projectProgress"
