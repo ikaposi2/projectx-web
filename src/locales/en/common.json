@@ -21,7 +21,7 @@
   "time": {
     "health": "Time service",
     "intro": "Book hours on signed-contract projects and internal budgets. Edit until approved.",
-    "adminIntro": "Approve hours, refuse them, or reset approved/refused hours so they can be edited again.",
+    "adminIntro": "Approve hours, or refuse them so they become editable again.",
     "week": "Week",
     "prevWeek": "Previous week",
     "nextWeek": "Next week",
@@ -38,18 +38,16 @@
     "nonBillable": "Non-billable",
     "approve": "Approve",
     "refuse": "Refuse",
-    "reset": "Reset",
     "actionOk": {
       "approve": "Hours approved.",
-      "refuse": "Hours refused.",
-      "reset": "Hours reset to editable."
+      "refuse": "Hours refused — editable again."
     },
-    "correction": "Correction",
-    "correctionHint": "Refuse hours or reset them so they can be edited again (selected week).",
-    "correctionEmpty": "No approved or refused hours this week.",
+    "correction": "Approved",
+    "correctionHint": "Refuse returns approved hours to editable (selected week).",
+    "correctionEmpty": "No approved hours this week.",
     "empty": "No outstanding registrations to approve.",
     "approvedCell": "Approved",
-    "rejectedCell": "Refused — reset to book again",
+    "rejectedCell": "Refused — book again",
     "you": "you",
     "colleague": "colleague",
     "days": {

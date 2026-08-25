@@ -588,7 +588,7 @@ export default function App() {
     }
   }
 
-  async function postEntryAction(id: string, action: "approve" | "refuse" | "reset") {
+  async function postEntryAction(id: string, action: "approve" | "refuse") {
     if (!token) return;
     setTimeError(null);
     setAdminStatus(null);
@@ -629,10 +629,10 @@ export default function App() {
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const activeView: AppView = view === "admin" && !isManager ? "hours" : view;
   const weekDateSet = new Set(weekDates);
-  // Pending inbox is cross-week; correction stays scoped to the selected admin week.
+  // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
   const submittedEntries = adminEntries.filter((e) => e.status === "submitted");
   const correctionEntries = adminEntries.filter(
-    (e) => (e.status === "approved" || e.status === "rejected") && weekDateSet.has(e.work_date),
+    (e) => e.status === "approved" && weekDateSet.has(e.work_date),
   );
   const displayName = brand?.display_name ?? "Platform";
   const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
@@ -1174,17 +1174,8 @@ export default function App() {
                             ) : null}
                           </div>
                           <div className="entry-actions">
-                            {entry.status === "approved" ? (
-                              <button type="button" onClick={() => void postEntryAction(entry.id, "refuse")}>
-                                {t("time.refuse")}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="primary"
-                              onClick={() => void postEntryAction(entry.id, "reset")}
-                            >
-                              {t("time.reset")}
+                            <button type="button" onClick={() => void postEntryAction(entry.id, "refuse")}>
+                              {t("time.refuse")}
                             </button>
                           </div>
                         </li>

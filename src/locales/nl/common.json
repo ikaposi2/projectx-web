@@ -21,7 +21,7 @@
   "time": {
     "health": "Time-service",
     "intro": "Boek uren op projecten uit getekende contracten en interne budgetten. Bewerk tot goedkeuring.",
-    "adminIntro": "Keur uren goed, weiger ze, of zet goedgekeurde/geweigerde uren terug naar bewerkbaar.",
+    "adminIntro": "Keur uren goed, of weiger ze zodat ze weer bewerkbaar worden.",
     "week": "Week",
     "prevWeek": "Vorige week",
     "nextWeek": "Volgende week",
@@ -38,18 +38,16 @@
     "nonBillable": "Non-billable",
     "approve": "Goedkeuren",
     "refuse": "Weigeren",
-    "reset": "Resetten",
     "actionOk": {
       "approve": "Uren goedgekeurd.",
-      "refuse": "Uren geweigerd.",
-      "reset": "Uren teruggezet naar bewerkbaar."
+      "refuse": "Uren geweigerd — weer bewerkbaar."
     },
-    "correction": "Correctie",
-    "correctionHint": "Weiger uren of zet ze terug naar bewerkbaar (geselecteerde week).",
-    "correctionEmpty": "Geen goedgekeurde of geweigerde uren deze week.",
+    "correction": "Goedgekeurd",
+    "correctionHint": "Weigeren zet goedgekeurde uren terug naar bewerkbaar (geselecteerde week).",
+    "correctionEmpty": "Geen goedgekeurde uren deze week.",
     "empty": "Geen openstaande registraties om goed te keuren.",
     "approvedCell": "Goedgekeurd",
-    "rejectedCell": "Geweigerd — reset om opnieuw te boeken",
+    "rejectedCell": "Geweigerd — opnieuw boeken",
     "you": "jij",
     "colleague": "collega",
     "days": {
