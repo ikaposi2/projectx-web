@@ -153,32 +153,55 @@
     "remove": "Remove",
     "preview": "Budget €{{budget}} · {{hours}}h · share {{share}}%",
     "save": "Save budget",
-    "saved": "Project budget saved."
+    "saved": "Project budget saved.",
+    "progress": "Delivery progress",
+    "progressLabel": "Progress",
+    "progressNone": "Not started",
+    "progressComplete": "Project complete",
+    "reportUrl": "Client report URL",
+    "reportHint": "Link to the report delivered to the client (required for completion billing)."
   },
   "finance": {
     "title": "Finance",
-    "intro": "Company reserve estimate, partner chargeback at the internal rate, and draft invoices.",
+    "billingTitle": "Customer billing",
+    "billingIntro": "Generate invoices for completed fixed-price work, 50% milestones (assignments above €30k), or unbilled consultancy hours.",
+    "billingEmpty": "No projects are ready to invoice. Set project progress in Hour administration, or approve billable hours.",
+    "sellerLine": "From: {{name}} · VAT {{vat}} · IBAN {{iban}}",
+    "clientReport": "Client report",
+    "invoices": "Invoices",
+    "invoicesEmpty": "No invoices yet.",
+    "invoiceGenerated": "Draft invoice created.",
+    "invoiceUpdated": "Invoice updated.",
+    "invoiceParties": "Seller {{seller}} → Buyer {{buyer}}",
+    "vatLine": "Subtotal €{{subtotal}} + VAT {{rate}}% (€{{vat}}) = €{{total}}",
+    "issue": "Issue",
+    "markPaid": "Mark paid",
+    "internalTitle": "Internal (partners / reserve)",
+    "internalIntro": "Partner chargeback and company reserve estimate — separate from customer invoices.",
     "loading": "Loading finance…",
     "reserve": "Company reserve",
     "reserveLine": "Current €{{current}} · target €{{target}} · surplus €{{surplus}}",
     "chargebackLine": "Chargeback {{hours}}h × €{{rate}}/h = €{{eur}}",
-    "invoiceTotals": "Invoices draft €{{draft}} · issued €{{issued}} · paid €{{paid}}",
     "compensation": "Partner compensation",
     "compensationEmpty": "No approved time entries in the finance ledger yet.",
     "compensationLine": "Billable {{billable}}h · chargeback {{chargeback}}h (€{{eur}})",
-    "invoices": "Invoices",
-    "customerName": "Customer",
-    "amount": "Amount (€)",
-    "notes": "Notes",
-    "addInvoice": "Add draft invoice",
-    "invoiceSaved": "Invoice draft created.",
-    "invoiceUpdated": "Invoice updated.",
-    "issue": "Issue",
-    "markPaid": "Mark paid",
     "status": {
       "draft": "Draft",
       "issued": "Issued",
       "paid": "Paid"
+    },
+    "kind": {
+      "fixed_completion": "Fixed price completion",
+      "fixed_milestone_50": "50% milestone",
+      "tm_hours": "Consultancy hours",
+      "manual": "Manual"
+    },
+    "progress": {
+      "none": "Not started",
+      "25": "25%",
+      "50": "50%",
+      "75": "75%",
+      "complete": "Complete"
     }
   }
 }

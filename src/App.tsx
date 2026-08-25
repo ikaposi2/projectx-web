@@ -79,6 +79,8 @@ type ProjectDetail = {
   overhead_rate: number;
   overhead_fixed_eur: number;
   consultancy_budget_eur: number;
+  progress?: string;
+  report_url?: string | null;
   staffing: ProjectStaffing[];
 };
 
@@ -104,12 +106,62 @@ type CompensationRow = {
 
 type FinanceInvoice = {
   id: string;
+  invoice_number: string;
+  kind: string;
   project_id: string | null;
+  project_name: string;
   customer_id: string | null;
   customer_name: string;
+  buyer_vat_id?: string | null;
+  buyer_address?: string | null;
+  seller_name: string;
+  seller_vat_id?: string | null;
+  seller_address?: string | null;
+  seller_bank_account?: string | null;
+  description?: string | null;
+  period_label?: string | null;
+  subtotal_eur: number;
+  vat_rate: number;
+  vat_eur: number;
   amount_eur: number;
+  payment_terms_days: number;
   status: string;
   notes: string | null;
+  lines: {
+    id: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    unit_price_eur: number;
+    amount_eur: number;
+  }[];
+};
+
+type BillingCandidate = {
+  project_id: string;
+  project_name: string;
+  customer_name: string;
+  fixed_price_eur: number;
+  progress: string;
+  report_url?: string | null;
+  actions: {
+    kind: string;
+    label: string;
+    amount_eur: number;
+    enabled: boolean;
+    hours?: number;
+    rate_eur?: number;
+  }[];
+};
+
+type CompanyProfile = {
+  legal_name: string;
+  address_line1: string | null;
+  vat_id: string | null;
+  coc_number: string | null;
+  bank_account: string | null;
+  invoice_email: string | null;
+  payment_terms_days: number;
 };
 
 type InternalBudget = {
@@ -272,12 +324,15 @@ export default function App() {
     overhead_mode: "rate" as "rate" | "fixed",
     overhead_rate: "10",
     overhead_fixed_eur: "0",
+    progress: "none",
+    report_url: "",
   });
   const [staffingDraft, setStaffingDraft] = useState<StaffingDraftRow[]>([]);
   const [reserve, setReserve] = useState<ReserveSnapshot | null>(null);
   const [compensation, setCompensation] = useState<CompensationRow[]>([]);
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([]);
-  const [invoiceForm, setInvoiceForm] = useState({ customer_name: "", amount_eur: "", notes: "" });
+  const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
   const activeCellKey = useRef<string | null>(null);
 
@@ -462,17 +517,21 @@ export default function App() {
   const loadFinance = useCallback(async () => {
     if (!token) return;
     try {
-      const [reserveRes, compRes, invRes] = await Promise.all([
+      const [reserveRes, compRes, invRes, candRes, companyRes] = await Promise.all([
         fetch(`${FINANCE_API}/reserve`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
-      if (!reserveRes.ok || !compRes.ok || !invRes.ok) {
+      if (!reserveRes.ok || !compRes.ok || !invRes.ok || !candRes.ok || !companyRes.ok) {
         throw new Error("finance_unavailable");
       }
       setReserve((await reserveRes.json()) as ReserveSnapshot);
       setCompensation((await compRes.json()) as CompensationRow[]);
       setInvoices((await invRes.json()) as FinanceInvoice[]);
+      setBillingCandidates((await candRes.json()) as BillingCandidate[]);
+      setCompanyProfile((await companyRes.json()) as CompanyProfile);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -896,6 +955,8 @@ export default function App() {
       overhead_mode: project.overhead_mode || "rate",
       overhead_rate: String(project.overhead_rate ?? 0),
       overhead_fixed_eur: String(project.overhead_fixed_eur ?? 0),
+      progress: project.progress || "none",
+      report_url: project.report_url || "",
     });
     setStaffingDraft(
       project.staffing.length
@@ -934,6 +995,8 @@ export default function App() {
           overhead_mode: budgetForm.overhead_mode,
           overhead_rate: Number(budgetForm.overhead_rate) || 0,
           overhead_fixed_eur: Number(budgetForm.overhead_fixed_eur) || 0,
+          progress: budgetForm.progress,
+          report_url: budgetForm.progress === "complete" ? budgetForm.report_url.trim() || null : null,
           staffing: staffingDraft.map((s) => ({
             display_name: s.display_name.trim(),
             rate_eur: Number(s.rate_eur) || 0,
@@ -955,30 +1018,24 @@ export default function App() {
     }
   }
 
-  async function saveInvoice(e: FormEvent) {
-    e.preventDefault();
-    if (!token || !invoiceForm.customer_name.trim()) return;
+  async function generateProjectInvoice(projectId: string, kind: string) {
+    if (!token) return;
     setTimeError(null);
     setFinanceStatus(null);
     try {
-      const res = await fetch(`${FINANCE_API}/invoices`, {
+      const res = await fetch(`${FINANCE_API}/invoices/generate`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          customer_name: invoiceForm.customer_name.trim(),
-          amount_eur: Number(invoiceForm.amount_eur) || 0,
-          notes: invoiceForm.notes.trim() || null,
-        }),
+        body: JSON.stringify({ project_id: projectId, kind }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
       }
-      setInvoiceForm({ customer_name: "", amount_eur: "", notes: "" });
-      setFinanceStatus(t("finance.invoiceSaved"));
+      setFinanceStatus(t("finance.invoiceGenerated"));
       await loadFinance();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -1647,49 +1704,130 @@ export default function App() {
             {activeView === "finance" && isManager ? (
               <>
                 <section className="panel wide">
-                  <h1>{t("finance.title")}</h1>
-                  <p>{t("finance.intro")}</p>
+                  <h1>{t("finance.billingTitle")}</h1>
+                  <p>{t("finance.billingIntro")}</p>
                   {financeStatus ? <p className="status">{financeStatus}</p> : null}
                   {timeError ? <p className="status error">{timeError}</p> : null}
-                  {reserve ? (
-                    <ul className="entry-list">
-                      <li>
-                        <div>
-                          <strong>{t("finance.reserve")}</strong>
-                          <div className="muted">
-                            {t("finance.reserveLine", {
-                              current: reserve.current_reserve_eur.toFixed(2),
-                              target: reserve.target_eur.toFixed(2),
-                              surplus: reserve.surplus_eur.toFixed(2),
-                            })}
-                          </div>
-                          <div className="muted">
-                            {t("finance.chargebackLine", {
-                              hours: reserve.chargeback_hours,
-                              eur: reserve.chargeback_eur.toFixed(2),
-                              rate: reserve.internal_rate_eur,
-                            })}
-                          </div>
-                          <div className="muted">
-                            {t("finance.invoiceTotals", {
-                              draft: reserve.invoice_draft_eur.toFixed(2),
-                              issued: reserve.invoice_issued_eur.toFixed(2),
-                              paid: reserve.invoice_paid_eur.toFixed(2),
-                            })}
-                          </div>
-                        </div>
-                      </li>
-                    </ul>
+                  {companyProfile ? (
+                    <p className="status">
+                      {t("finance.sellerLine", {
+                        name: companyProfile.legal_name,
+                        vat: companyProfile.vat_id || "—",
+                        iban: companyProfile.bank_account || "—",
+                      })}
+                    </p>
+                  ) : null}
+                  {billingCandidates.length === 0 ? (
+                    <p className="status">{t("finance.billingEmpty")}</p>
                   ) : (
-                    <p className="status">{t("finance.loading")}</p>
+                    <ul className="entry-list">
+                      {billingCandidates.map((c) => (
+                        <li key={c.project_id}>
+                          <div>
+                            <strong>
+                              {c.customer_name} · {c.project_name}
+                            </strong>
+                            <div className="muted">
+                              €{c.fixed_price_eur} · {t(`finance.progress.${c.progress}`)}
+                              {c.report_url ? (
+                                <>
+                                  {" · "}
+                                  <a href={c.report_url} target="_blank" rel="noreferrer">
+                                    {t("finance.clientReport")}
+                                  </a>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="entry-actions">
+                            {c.actions.map((a) => (
+                              <button
+                                key={a.kind}
+                                type="button"
+                                className="primary"
+                                disabled={!a.enabled}
+                                onClick={() => void generateProjectInvoice(c.project_id, a.kind)}
+                              >
+                                {a.label}
+                                {a.amount_eur > 0 ? ` (€${a.amount_eur.toFixed(2)})` : ""}
+                              </button>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </section>
 
                 <section className="panel wide">
-                  <h2>{t("finance.compensation")}</h2>
-                  {compensation.length === 0 ? (
-                    <p className="status">{t("finance.compensationEmpty")}</p>
+                  <h2>{t("finance.invoices")}</h2>
+                  {invoices.length === 0 ? (
+                    <p className="status">{t("finance.invoicesEmpty")}</p>
                   ) : (
+                    <ul className="entry-list">
+                      {invoices.map((inv) => (
+                        <li key={inv.id}>
+                          <div>
+                            <strong>
+                              {inv.invoice_number} · {inv.customer_name} · €{inv.amount_eur.toFixed(2)}
+                            </strong>
+                            <div className="muted">
+                              {inv.project_name} · {t(`finance.kind.${inv.kind}`, { defaultValue: inv.kind })} ·{" "}
+                              {t(`finance.status.${inv.status}`)}
+                            </div>
+                            <div className="muted">
+                              {t("finance.invoiceParties", {
+                                seller: inv.seller_name || "—",
+                                buyer: inv.customer_name,
+                              })}
+                            </div>
+                            {inv.lines?.map((line) => (
+                              <div key={line.id} className="muted">
+                                {line.description}: {line.quantity}
+                                {line.unit === "hour" ? "h" : ""} × €{line.unit_price_eur} = €
+                                {line.amount_eur.toFixed(2)}
+                              </div>
+                            ))}
+                            <div className="muted">
+                              {t("finance.vatLine", {
+                                subtotal: inv.subtotal_eur.toFixed(2),
+                                vat: inv.vat_eur.toFixed(2),
+                                rate: inv.vat_rate,
+                                total: inv.amount_eur.toFixed(2),
+                              })}
+                            </div>
+                          </div>
+                          <div className="entry-actions">
+                            {inv.status === "draft" ? (
+                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
+                                {t("finance.issue")}
+                              </button>
+                            ) : null}
+                            {inv.status === "issued" ? (
+                              <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
+                                {t("finance.markPaid")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="panel wide">
+                  <h2>{t("finance.internalTitle")}</h2>
+                  <p className="status">{t("finance.internalIntro")}</p>
+                  {reserve ? (
+                    <p className="status">
+                      {t("finance.reserveLine", {
+                        current: reserve.current_reserve_eur.toFixed(2),
+                        target: reserve.target_eur.toFixed(2),
+                        surplus: reserve.surplus_eur.toFixed(2),
+                      })}
+                    </p>
+                  ) : null}
+                  {compensation.length > 0 ? (
                     <ul className="entry-list">
                       {compensation.map((row) => (
                         <li key={row.partner_id}>
@@ -1706,65 +1844,9 @@ export default function App() {
                         </li>
                       ))}
                     </ul>
+                  ) : (
+                    <p className="status">{t("finance.compensationEmpty")}</p>
                   )}
-                </section>
-
-                <section className="panel wide">
-                  <h2>{t("finance.invoices")}</h2>
-                  <ul className="entry-list">
-                    {invoices.map((inv) => (
-                      <li key={inv.id}>
-                        <div>
-                          <strong>
-                            {inv.customer_name} · €{inv.amount_eur}
-                          </strong>
-                          <div className="muted">{t(`finance.status.${inv.status}`)}</div>
-                        </div>
-                        <div className="entry-actions">
-                          {inv.status === "draft" ? (
-                            <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
-                              {t("finance.issue")}
-                            </button>
-                          ) : null}
-                          {inv.status === "issued" ? (
-                            <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
-                              {t("finance.markPaid")}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <form className="customer-form" onSubmit={(e) => void saveInvoice(e)}>
-                    <label htmlFor="invCustomer">{t("finance.customerName")}</label>
-                    <input
-                      id="invCustomer"
-                      value={invoiceForm.customer_name}
-                      onChange={(e) => setInvoiceForm((p) => ({ ...p, customer_name: e.target.value }))}
-                      required
-                    />
-                    <label htmlFor="invAmount">{t("finance.amount")}</label>
-                    <input
-                      id="invAmount"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={invoiceForm.amount_eur}
-                      onChange={(e) => setInvoiceForm((p) => ({ ...p, amount_eur: e.target.value }))}
-                      required
-                    />
-                    <label htmlFor="invNotes">{t("finance.notes")}</label>
-                    <input
-                      id="invNotes"
-                      value={invoiceForm.notes}
-                      onChange={(e) => setInvoiceForm((p) => ({ ...p, notes: e.target.value }))}
-                    />
-                    <div className="actions">
-                      <button className="primary" type="submit">
-                        {t("finance.addInvoice")}
-                      </button>
-                    </div>
-                  </form>
                 </section>
               </>
             ) : null}
@@ -2004,6 +2086,33 @@ export default function App() {
                           )}
                         </fieldset>
                       ))}
+
+                      <h3>{t("budget.progress")}</h3>
+                      <label htmlFor="projectProgress">{t("budget.progressLabel")}</label>
+                      <select
+                        id="projectProgress"
+                        value={budgetForm.progress}
+                        onChange={(e) => setBudgetForm((p) => ({ ...p, progress: e.target.value }))}
+                      >
+                        <option value="none">{t("budget.progressNone")}</option>
+                        <option value="25">25%</option>
+                        <option value="50">50%</option>
+                        <option value="75">75%</option>
+                        <option value="complete">{t("budget.progressComplete")}</option>
+                      </select>
+                      {budgetForm.progress === "complete" ? (
+                        <>
+                          <label htmlFor="reportUrl">{t("budget.reportUrl")}</label>
+                          <input
+                            id="reportUrl"
+                            type="url"
+                            value={budgetForm.report_url}
+                            onChange={(e) => setBudgetForm((p) => ({ ...p, report_url: e.target.value }))}
+                            placeholder="https://"
+                          />
+                          <p className="field-hint">{t("budget.reportHint")}</p>
+                        </>
+                      ) : null}
 
                       <h3>{t("budget.staffing")}</h3>
                       <p className="status">{t("budget.staffingHint")}</p>

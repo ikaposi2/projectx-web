@@ -153,32 +153,55 @@
     "remove": "Verwijderen",
     "preview": "Budget €{{budget}} · {{hours}}u · aandeel {{share}}%",
     "save": "Budget opslaan",
-    "saved": "Projectbudget opgeslagen."
+    "saved": "Projectbudget opgeslagen.",
+    "progress": "Voortgang oplevering",
+    "progressLabel": "Voortgang",
+    "progressNone": "Niet gestart",
+    "progressComplete": "Project afgerond",
+    "reportUrl": "URL klantrapport",
+    "reportHint": "Link naar het rapport dat aan de klant is opgeleverd (nodig voor eindfacturatie)."
   },
   "finance": {
     "title": "Finance",
-    "intro": "Schatting van de bedrijfsreserve, partner-chargeback tegen het interne tarief, en conceptfacturen.",
+    "billingTitle": "Klantfacturatie",
+    "billingIntro": "Maak facturen voor afgeronde vaste-prijsopdrachten, 50%-mijlpalen (opdrachten boven €30k), of ongefactureerde consultancy-uren.",
+    "billingEmpty": "Geen projecten klaar om te factureren. Zet voortgang in Urenadministratie, of keur billable uren goed.",
+    "sellerLine": "Van: {{name}} · BTW {{vat}} · IBAN {{iban}}",
+    "clientReport": "Klantrapport",
+    "invoices": "Facturen",
+    "invoicesEmpty": "Nog geen facturen.",
+    "invoiceGenerated": "Conceptfactuur aangemaakt.",
+    "invoiceUpdated": "Factuur bijgewerkt.",
+    "invoiceParties": "Verkoper {{seller}} → Koper {{buyer}}",
+    "vatLine": "Subtotaal €{{subtotal}} + BTW {{rate}}% (€{{vat}}) = €{{total}}",
+    "issue": "Uitgeven",
+    "markPaid": "Markeer betaald",
+    "internalTitle": "Intern (partners / reserve)",
+    "internalIntro": "Partner-chargeback en bedrijfsreserve — los van klantfacturen.",
     "loading": "Finance laden…",
     "reserve": "Bedrijfsreserve",
     "reserveLine": "Huidig €{{current}} · doel €{{target}} · surplus €{{surplus}}",
     "chargebackLine": "Chargeback {{hours}}u × €{{rate}}/u = €{{eur}}",
-    "invoiceTotals": "Facturen concept €{{draft}} · uitgegeven €{{issued}} · betaald €{{paid}}",
     "compensation": "Partnercompensatie",
     "compensationEmpty": "Nog geen goedgekeurde uren in het finance-ledger.",
     "compensationLine": "Billable {{billable}}u · chargeback {{chargeback}}u (€{{eur}})",
-    "invoices": "Facturen",
-    "customerName": "Klant",
-    "amount": "Bedrag (€)",
-    "notes": "Notities",
-    "addInvoice": "Conceptfactuur toevoegen",
-    "invoiceSaved": "Conceptfactuur aangemaakt.",
-    "invoiceUpdated": "Factuur bijgewerkt.",
-    "issue": "Uitgeven",
-    "markPaid": "Markeer betaald",
     "status": {
       "draft": "Concept",
       "issued": "Uitgegeven",
       "paid": "Betaald"
+    },
+    "kind": {
+      "fixed_completion": "Vaste prijs afronding",
+      "fixed_milestone_50": "50% mijlpaal",
+      "tm_hours": "Consultancy-uren",
+      "manual": "Handmatig"
+    },
+    "progress": {
+      "none": "Niet gestart",
+      "25": "25%",
+      "50": "50%",
+      "75": "75%",
+      "complete": "Afgerond"
     }
   }
 }
