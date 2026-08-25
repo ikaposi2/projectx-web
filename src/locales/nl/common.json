@@ -287,7 +287,8 @@
     "seniorBadge": "Senior",
     "partnerBadge": "Partner",
     "missingName": "Naam is verplicht.",
-    "invalidRates": "Voer een geldig factureertarief (> 0) en intern tarief (≥ 0) in."
+    "invalidRates": "Voer een geldig factureertarief (> 0) en intern tarief (≥ 0) in.",
+    "listTitle": "Resourcelijst"
   },
   "project": {
     "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer funnel-fase, budgetten, staffing en voortgang.",
@@ -323,21 +324,51 @@
     }
   },
   "agenda": {
-    "weekIntro": "Kickoffs en factuurvervaldagen voor de geselecteerde week.",
+    "weekIntro": "Kickoffs, verlof en factuurvervaldagen voor de geselecteerde week.",
     "kickoffsTitle": "Kickoffs",
     "kickoffsEmpty": "Geen kickoffs deze week.",
     "kickoffLabel": "Kickoff",
+    "blocksTitle": "Verlof / niet beschikbaar",
+    "blocksEmpty": "Geen verlof of onbeschikbaarheid deze week.",
     "planKickoff": "Kickoff plannen",
     "pickerTitle": "Boek 1 uur kickoff",
-    "pickerIntro": "Vrije slots bij senior engineers (ma–vr 09:00–17:00, Europe/Amsterdam).",
+    "pickerIntro": "Vrije slots bij senior engineers (ma–vr 09:00–17:00, Europe/Amsterdam). Verlof en onbeschikbaarheid worden uitgesloten.",
     "loading": "Beschikbaarheid laden…",
     "noSlots": "Geen vrije senior-slots in de komende twee weken.",
     "bookSlot": "Boeken",
     "booked": "Kickoff geboekt {{when}} met {{who}}.",
-    "slotUnavailable": "Dat slot is niet meer vrij.",
+    "slotUnavailable": "Dat slot overlapt bestaande kalendertijd.",
     "alreadyBooked": "Dit project heeft al een kickoff geboekt.",
     "slotInPast": "Kan geen slot in het verleden boeken.",
     "noSeniors": "Geen actieve seniors om toe te wijzen.",
-    "seniorNotFound": "Geselecteerde senior is niet beschikbaar."
+    "seniorNotFound": "Geselecteerde senior is niet beschikbaar.",
+    "resourceNotFound": "Resource niet gevonden of inactief.",
+    "endsRequired": "Start- en einddatum/-tijd zijn verplicht.",
+    "resourceRequired": "Selecteer een resource.",
+    "invalidKind": "Onbekend kalenderbloktype.",
+    "notAllowed": "Je mag deze kalenderafspraak niet plannen of annuleren.",
+    "resourceCalendarTitle": "Resourcekalender",
+    "resourceCalendarIntro": "Plan verlof of onbeschikbaarheid. Deze blokken verwijderen vrije kickoff-slots voor die persoon.",
+    "resourceCalendarEmpty": "Niets gepland op resourcekalenders deze week.",
+    "planBlock": "Verlof plannen",
+    "planBlockTitle": "Plan verlof / onbeschikbaarheid",
+    "planBlockIntro": "Blokkeer de kalender van een resource zodat die niet voor bedrijfskickoffs geboekt kan worden in die periode.",
+    "resource": "Resource",
+    "pickResource": "Selecteer een resource…",
+    "blockKind": "Type",
+    "startsAt": "Start",
+    "endsAt": "Einde",
+    "notes": "Notities",
+    "notesHint": "bijv. zomervakantie, training, alleen-klantweek…",
+    "saveBlock": "Blok opslaan",
+    "blockSaved": "Kalenderblok opgeslagen.",
+    "cancelBlock": "Annuleren",
+    "confirmCancelBlock": "Deze kalenderafspraak annuleren?",
+    "blockCancelled": "Kalenderafspraak geannuleerd.",
+    "kind": {
+      "kickoff": "Kickoff",
+      "pto": "Verlof / PTO",
+      "unavailable": "Niet beschikbaar voor bedrijfswerk"
+    }
   }
 }

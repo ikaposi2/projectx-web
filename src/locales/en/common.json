@@ -287,7 +287,8 @@
     "seniorBadge": "Senior",
     "partnerBadge": "Partner",
     "missingName": "Name is required.",
-    "invalidRates": "Enter a valid billable rate (> 0) and internal rate (≥ 0)."
+    "invalidRates": "Enter a valid billable rate (> 0) and internal rate (≥ 0).",
+    "listTitle": "Resource list"
   },
   "project": {
     "pageIntro": "Create projects from catalog offerings and manage funnel stage, budgets, staffing, and progress.",
@@ -323,21 +324,51 @@
     }
   },
   "agenda": {
-    "weekIntro": "Kickoffs and invoice due dates for the selected week.",
+    "weekIntro": "Kickoffs, time-off, and invoice due dates for the selected week.",
     "kickoffsTitle": "Kickoffs",
     "kickoffsEmpty": "No kickoffs this week.",
     "kickoffLabel": "Kickoff",
+    "blocksTitle": "PTO / unavailable",
+    "blocksEmpty": "No PTO or unavailable blocks this week.",
     "planKickoff": "Plan kickoff",
     "pickerTitle": "Book 1h kickoff",
-    "pickerIntro": "Free slots with senior engineers (Mon–Fri 09:00–17:00, Europe/Amsterdam).",
+    "pickerIntro": "Free slots with senior engineers (Mon–Fri 09:00–17:00, Europe/Amsterdam). PTO and unavailable time are excluded.",
     "loading": "Loading availability…",
     "noSlots": "No free senior slots in the next two weeks.",
     "bookSlot": "Book",
     "booked": "Kickoff booked {{when}} with {{who}}.",
-    "slotUnavailable": "That slot is no longer free.",
+    "slotUnavailable": "That slot overlaps existing calendar time.",
     "alreadyBooked": "This project already has a kickoff booked.",
     "slotInPast": "Cannot book a slot in the past.",
     "noSeniors": "No active senior resources to assign.",
-    "seniorNotFound": "Selected senior is not available."
+    "seniorNotFound": "Selected senior is not available.",
+    "resourceNotFound": "Resource not found or inactive.",
+    "endsRequired": "Start and end date/time are required.",
+    "resourceRequired": "Select a resource.",
+    "invalidKind": "Unknown calendar block type.",
+    "notAllowed": "You cannot plan or cancel this calendar entry.",
+    "resourceCalendarTitle": "Resource calendar",
+    "resourceCalendarIntro": "Plan PTO or unavailable time. These blocks remove free kickoff slots for that person.",
+    "resourceCalendarEmpty": "Nothing planned on resource calendars this week.",
+    "planBlock": "Plan time off",
+    "planBlockTitle": "Plan PTO / unavailable",
+    "planBlockIntro": "Block a resource calendar so they cannot be booked for company kickoffs during that period.",
+    "resource": "Resource",
+    "pickResource": "Select a resource…",
+    "blockKind": "Type",
+    "startsAt": "Starts",
+    "endsAt": "Ends",
+    "notes": "Notes",
+    "notesHint": "e.g. summer holiday, training, client-only week…",
+    "saveBlock": "Save block",
+    "blockSaved": "Calendar block saved.",
+    "cancelBlock": "Cancel",
+    "confirmCancelBlock": "Cancel this calendar entry?",
+    "blockCancelled": "Calendar entry cancelled.",
+    "kind": {
+      "kickoff": "Kickoff",
+      "pto": "PTO / leave",
+      "unavailable": "Unavailable for company work"
+    }
   }
 }

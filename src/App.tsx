@@ -104,6 +104,7 @@ type KickoffAppointment = {
   project_id?: string | null;
   project_name?: string | null;
   customer_name?: string | null;
+  notes?: string | null;
   starts_at: string;
   ends_at: string;
   status: string;
@@ -452,6 +453,16 @@ export default function App() {
   const [kickoffPickerProjectId, setKickoffPickerProjectId] = useState<string | null>(null);
   const [kickoffSlots, setKickoffSlots] = useState<AvailabilitySlot[]>([]);
   const [kickoffLoading, setKickoffLoading] = useState(false);
+  const [resourceCalendarWeek, setResourceCalendarWeek] = useState(() => startOfIsoWeek(new Date()));
+  const [resourceCalendar, setResourceCalendar] = useState<KickoffAppointment[]>([]);
+  const [calendarForm, setCalendarForm] = useState({
+    consultant_rate_id: "",
+    kind: "pto" as "pto" | "unavailable",
+    starts_at: "",
+    ends_at: "",
+    notes: "",
+  });
+  const [planningCalendar, setPlanningCalendar] = useState(false);
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [creatingCatalog, setCreatingCatalog] = useState(false);
@@ -732,6 +743,20 @@ export default function App() {
     }
   }, [token]);
 
+  const loadResourceCalendar = useCallback(async () => {
+    if (!token) return;
+    const weekStartIso = toIsoDate(resourceCalendarWeek);
+    try {
+      const res = await fetch(`${PARTNER_API}/appointments?week_start=${weekStartIso}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResourceCalendar((await res.json()) as KickoffAppointment[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, resourceCalendarWeek]);
+
   useEffect(() => {
     if (user && token) {
       void loadBookable();
@@ -768,7 +793,8 @@ export default function App() {
     if (!token || !user || view !== "resources") return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadResources();
-  }, [token, user, view, loadResources]);
+    void loadResourceCalendar();
+  }, [token, user, view, loadResources, loadResourceCalendar, resourceCalendarWeek]);
 
   useEffect(() => {
     if (!token || view !== "projects" || !projectCreateCustomerQuery.trim()) {
@@ -981,6 +1007,11 @@ export default function App() {
       if (detail === "slot_in_past") return t("agenda.slotInPast");
       if (detail === "no_seniors") return t("agenda.noSeniors");
       if (detail === "senior_not_found") return t("agenda.seniorNotFound");
+      if (detail === "resource_not_found") return t("agenda.resourceNotFound");
+      if (detail === "ends_at_required") return t("agenda.endsRequired");
+      if (detail === "consultant_rate_id_required") return t("agenda.resourceRequired");
+      if (detail === "invalid_appointment_kind") return t("agenda.invalidKind");
+      if (detail === "not_allowed") return t("agenda.notAllowed");
       return detail;
     }
     if (Array.isArray(detail)) {
@@ -1638,12 +1669,14 @@ export default function App() {
   function openResourceCreate() {
     setCreatingResource(true);
     setEditingResourceId(null);
+    setPlanningCalendar(false);
     setResourceForm(emptyResourceForm);
   }
 
   function openResourceEdit(r: Resource) {
     setCreatingResource(false);
     setEditingResourceId(r.id);
+    setPlanningCalendar(false);
     setResourceForm({
       display_name: r.display_name,
       kind: r.kind === "internal" ? "internal" : "external",
@@ -1719,6 +1752,74 @@ export default function App() {
     }
   }
 
+  async function saveCalendarBlock() {
+    if (!token) return;
+    if (!calendarForm.consultant_rate_id) {
+      setTimeError(t("agenda.resourceRequired"));
+      return;
+    }
+    const starts = fromDateTimeLocalValue(calendarForm.starts_at);
+    const ends = fromDateTimeLocalValue(calendarForm.ends_at);
+    if (!starts || !ends) {
+      setTimeError(t("agenda.endsRequired"));
+      return;
+    }
+    setTimeError(null);
+    setAdminStatus(null);
+    try {
+      const res = await fetch(`${PARTNER_API}/appointments`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: calendarForm.kind,
+          consultant_rate_id: calendarForm.consultant_rate_id,
+          starts_at: starts,
+          ends_at: ends,
+          notes: calendarForm.notes.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setAdminStatus(t("agenda.blockSaved"));
+      setPlanningCalendar(false);
+      setCalendarForm({
+        consultant_rate_id: "",
+        kind: "pto",
+        starts_at: "",
+        ends_at: "",
+        notes: "",
+      });
+      await Promise.all([loadResourceCalendar(), loadFinance()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function cancelCalendarBlock(id: string) {
+    if (!token) return;
+    if (!window.confirm(t("agenda.confirmCancelBlock"))) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${PARTNER_API}/appointments/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setAdminStatus(t("agenda.blockCancelled"));
+      await Promise.all([loadResourceCalendar(), loadFinance()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function createProjectFromCatalog() {
     if (!token || !projectCreateCustomerId || !projectCreateServiceId) return;
     setTimeError(null);
@@ -1788,6 +1889,13 @@ export default function App() {
       ? "hours"
       : view;
   const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
+  const weekKickoffs = kickoffAppointments.filter((a) => a.kind === "kickoff");
+  const weekCalendarBlocks = kickoffAppointments.filter(
+    (a) => a.kind === "pto" || a.kind === "unavailable",
+  );
+  const resourceWeekBlocks = resourceCalendar.filter(
+    (a) => a.kind === "pto" || a.kind === "unavailable" || a.kind === "kickoff",
+  );
   const weekDateSet = new Set(weekDates);
   // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
   const submittedEntries = adminEntries.filter((e) => e.status === "submitted");
@@ -2451,11 +2559,11 @@ export default function App() {
                     <p className="status error">{t("finance.overdueAlert", { count: overdueCount })}</p>
                   ) : null}
                   <h2>{t("agenda.kickoffsTitle")}</h2>
-                  {kickoffAppointments.length === 0 ? (
+                  {weekKickoffs.length === 0 ? (
                     <p className="status">{t("agenda.kickoffsEmpty")}</p>
                   ) : (
                     <ul className="entry-list">
-                      {kickoffAppointments.map((item) => (
+                      {weekKickoffs.map((item) => (
                         <li key={item.id}>
                           <div>
                             <strong>
@@ -2464,6 +2572,27 @@ export default function App() {
                             <div className="muted">
                               {new Date(item.starts_at).toLocaleString()} · {item.display_name} ·{" "}
                               {item.duration_minutes}m
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <h2>{t("agenda.blocksTitle")}</h2>
+                  {weekCalendarBlocks.length === 0 ? (
+                    <p className="status">{t("agenda.blocksEmpty")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {weekCalendarBlocks.map((item) => (
+                        <li key={item.id}>
+                          <div>
+                            <strong>
+                              {t(`agenda.kind.${item.kind}`)} · {item.display_name}
+                            </strong>
+                            <div className="muted">
+                              {new Date(item.starts_at).toLocaleString()} →{" "}
+                              {new Date(item.ends_at).toLocaleString()}
+                              {item.notes ? ` · ${item.notes}` : ""}
                             </div>
                           </div>
                         </li>
@@ -2906,6 +3035,16 @@ export default function App() {
                     <p>{t("resources.intro")}</p>
                   </div>
                   <div className="actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanningCalendar(true);
+                        setCreatingResource(false);
+                        setEditingResourceId(null);
+                      }}
+                    >
+                      {t("agenda.planBlock")}
+                    </button>
                     <button type="button" className="primary" onClick={() => openResourceCreate()}>
                       {t("resources.add")}
                     </button>
@@ -2913,6 +3052,116 @@ export default function App() {
                 </div>
                 {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 {timeError ? <p className="status error">{timeError}</p> : null}
+
+                <h2>{t("agenda.resourceCalendarTitle")}</h2>
+                <p className="status">{t("agenda.resourceCalendarIntro")}</p>
+                <div className="actions week-actions">
+                  <button type="button" onClick={() => setResourceCalendarWeek((w) => addDays(w, -7))}>
+                    {t("time.prevWeek")}
+                  </button>
+                  <button type="button" onClick={() => setResourceCalendarWeek(startOfIsoWeek(new Date()))}>
+                    {t("time.thisWeek")}
+                  </button>
+                  <button type="button" onClick={() => setResourceCalendarWeek((w) => addDays(w, 7))}>
+                    {t("time.nextWeek")}
+                  </button>
+                </div>
+                <p className="week-range">{formatWeekRange(resourceCalendarWeek, i18n.language)}</p>
+                {resourceWeekBlocks.length === 0 ? (
+                  <p className="status">{t("agenda.resourceCalendarEmpty")}</p>
+                ) : (
+                  <ul className="entry-list">
+                    {resourceWeekBlocks.map((item) => (
+                      <li key={item.id}>
+                        <div>
+                          <strong>
+                            {t(`agenda.kind.${item.kind}`)} · {item.display_name}
+                          </strong>
+                          <div className="muted">
+                            {new Date(item.starts_at).toLocaleString()} →{" "}
+                            {new Date(item.ends_at).toLocaleString()}
+                            {item.project_name ? ` · ${item.project_name}` : ""}
+                            {item.notes ? ` · ${item.notes}` : ""}
+                          </div>
+                        </div>
+                        <div className="entry-actions">
+                          <button type="button" onClick={() => void cancelCalendarBlock(item.id)}>
+                            {t("agenda.cancelBlock")}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {planningCalendar ? (
+                  <div className="customer-form">
+                    <h2>{t("agenda.planBlockTitle")}</h2>
+                    <p className="status">{t("agenda.planBlockIntro")}</p>
+                    <label htmlFor="calResource">{t("agenda.resource")}</label>
+                    <select
+                      id="calResource"
+                      value={calendarForm.consultant_rate_id}
+                      onChange={(e) =>
+                        setCalendarForm((p) => ({ ...p, consultant_rate_id: e.target.value }))
+                      }
+                    >
+                      <option value="">{t("agenda.pickResource")}</option>
+                      {resources
+                        .filter((r) => r.active)
+                        .map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.display_name}
+                          </option>
+                        ))}
+                    </select>
+                    <label htmlFor="calKind">{t("agenda.blockKind")}</label>
+                    <select
+                      id="calKind"
+                      value={calendarForm.kind}
+                      onChange={(e) =>
+                        setCalendarForm((p) => ({
+                          ...p,
+                          kind: e.target.value === "unavailable" ? "unavailable" : "pto",
+                        }))
+                      }
+                    >
+                      <option value="pto">{t("agenda.kind.pto")}</option>
+                      <option value="unavailable">{t("agenda.kind.unavailable")}</option>
+                    </select>
+                    <label htmlFor="calStart">{t("agenda.startsAt")}</label>
+                    <input
+                      id="calStart"
+                      type="datetime-local"
+                      value={calendarForm.starts_at}
+                      onChange={(e) => setCalendarForm((p) => ({ ...p, starts_at: e.target.value }))}
+                    />
+                    <label htmlFor="calEnd">{t("agenda.endsAt")}</label>
+                    <input
+                      id="calEnd"
+                      type="datetime-local"
+                      value={calendarForm.ends_at}
+                      onChange={(e) => setCalendarForm((p) => ({ ...p, ends_at: e.target.value }))}
+                    />
+                    <label htmlFor="calNotes">{t("agenda.notes")}</label>
+                    <input
+                      id="calNotes"
+                      value={calendarForm.notes}
+                      onChange={(e) => setCalendarForm((p) => ({ ...p, notes: e.target.value }))}
+                      maxLength={500}
+                      placeholder={t("agenda.notesHint")}
+                    />
+                    <div className="actions">
+                      <button type="button" className="primary" onClick={() => void saveCalendarBlock()}>
+                        {t("agenda.saveBlock")}
+                      </button>
+                      <button type="button" onClick={() => setPlanningCalendar(false)}>
+                        {t("customer.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {creatingResource || editingResourceId ? (
                   <div className="customer-form">
                     <h2>{editingResourceId ? t("resources.editTitle") : t("resources.createTitle")}</h2>
@@ -2986,6 +3235,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
+                <h2>{t("resources.listTitle")}</h2>
                 {resources.filter((r) => r.active).length === 0 ? (
                   <p className="status">{t("resources.empty")}</p>
                 ) : (
@@ -3004,6 +3254,17 @@ export default function App() {
                             </div>
                           </div>
                           <div className="entry-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPlanningCalendar(true);
+                                setCalendarForm((p) => ({ ...p, consultant_rate_id: r.id }));
+                                setCreatingResource(false);
+                                setEditingResourceId(null);
+                              }}
+                            >
+                              {t("agenda.planBlock")}
+                            </button>
                             <button type="button" onClick={() => openResourceEdit(r)}>
                               {t("resources.edit")}
                             </button>
