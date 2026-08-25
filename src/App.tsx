@@ -137,6 +137,7 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
+  const [adminEntries, setAdminEntries] = useState<TimeEntry[]>([]);
   const [projects, setProjects] = useState<BookableProject[]>([]);
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -148,6 +149,7 @@ export default function App() {
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [adminStatus, setAdminStatus] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("hours");
   const activeCellKey = useRef<string | null>(null);
 
@@ -292,12 +294,31 @@ export default function App() {
     }
   }, [token, weekDates]);
 
+  const loadAdminEntries = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${TIME_API}/entries`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAdminEntries((await res.json()) as TimeEntry[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
   useEffect(() => {
     if (user && token) {
       void loadBookable();
       void loadEntries();
     }
   }, [user, token, loadBookable, loadEntries]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "admin") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadAdminEntries();
+  }, [token, user, view, loadAdminEntries]);
 
   useEffect(() => {
     if (!token || view !== "customers") return;
@@ -362,6 +383,7 @@ export default function App() {
     setToken(null);
     setUser(null);
     setEntries([]);
+    setAdminEntries([]);
     setProjects([]);
     setBudgets([]);
     setCustomers([]);
@@ -569,6 +591,7 @@ export default function App() {
   async function postEntryAction(id: string, action: "approve" | "refuse" | "reset") {
     if (!token) return;
     setTimeError(null);
+    setAdminStatus(null);
     try {
       const res = await fetch(`${TIME_API}/entries/${id}/${action}`, {
         method: "POST",
@@ -576,10 +599,11 @@ export default function App() {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? res.statusText);
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
       }
-      await loadEntries();
-      // Partner consumes the NATS event asynchronously; brief wait then refresh remaining hours.
+      setAdminStatus(t(`time.actionOk.${action}`));
+      await Promise.all([loadEntries(), loadAdminEntries()]);
+      // Partner/project consumers apply remaining hours asynchronously.
       await new Promise((resolve) => setTimeout(resolve, 600));
       await loadBookable();
     } catch (err) {
@@ -604,12 +628,25 @@ export default function App() {
 
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const activeView: AppView = view === "admin" && !isManager ? "hours" : view;
-  const submittedEntries = entries.filter((e) => e.status === "submitted");
-  const correctionEntries = entries.filter((e) => e.status === "approved" || e.status === "rejected");
+  const weekDateSet = new Set(weekDates);
+  // Pending inbox is cross-week; correction stays scoped to the selected admin week.
+  const submittedEntries = adminEntries.filter((e) => e.status === "submitted");
+  const correctionEntries = adminEntries.filter(
+    (e) => (e.status === "approved" || e.status === "rejected") && weekDateSet.has(e.work_date),
+  );
   const displayName = brand?.display_name ?? "Platform";
   const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
   const whoLabel = (entry: TimeEntry) =>
     user && entry.partner_id === user.id ? t("time.you") : t("time.colleague");
+
+  function goToView(next: AppView) {
+    if (typeof document !== "undefined") {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+    }
+    setAdminStatus(null);
+    setView(next);
+  }
 
   function dayClass(index: number): string {
     const total = dayTotals[index] ?? 0;
@@ -776,7 +813,7 @@ export default function App() {
             <button
               type="button"
               className={view === "hours" ? "nav-item active" : "nav-item"}
-              onClick={() => setView("hours")}
+              onClick={() => goToView("hours")}
             >
               {t("nav.hours")}
             </button>
@@ -784,7 +821,7 @@ export default function App() {
               <button
                 type="button"
                 className={view === "admin" ? "nav-item active" : "nav-item"}
-                onClick={() => setView("admin")}
+                onClick={() => goToView("admin")}
               >
                 {t("nav.admin")}
               </button>
@@ -792,7 +829,7 @@ export default function App() {
             <button
               type="button"
               className={view === "customers" ? "nav-item active" : "nav-item"}
-              onClick={() => setView("customers")}
+              onClick={() => goToView("customers")}
             >
               {t("nav.customers")}
             </button>
@@ -1082,11 +1119,13 @@ export default function App() {
                     </button>
                   </div>
                   <p className="week-range">{formatWeekRange(weekStart, i18n.language)}</p>
-                  {timeError && <p className="status error">{timeError}</p>}
+                  {timeError ? <p className="status error">{timeError}</p> : null}
+                  {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 </section>
 
                 <section className="panel wide">
                   <h2>{t("time.entries")}</h2>
+                  <p className="status">{t("time.pendingHint")}</p>
                   {submittedEntries.length === 0 ? (
                     <p className="status">{t("time.empty")}</p>
                   ) : (
