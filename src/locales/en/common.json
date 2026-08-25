@@ -190,7 +190,8 @@
     "dueLine": "Due {{date}} ({{days}} days)",
     "overdue": "Overdue",
     "overdueAlert": "{{count}} invoice(s) overdue — follow up with the customer",
-    "agendaTitle": "Invoice due dates",
+    "agendaTitle": "Week agenda",
+    "agendaInvoicesTitle": "Invoice due dates",
     "agendaEmpty": "No invoices due this week and none overdue.",
     "internalTitle": "Internal (partners / reserve / VAT)",
     "internalIntro": "Company reserve is net of VAT. VAT collected on invoices sits in a separate account until remitted every quarter.",
@@ -304,7 +305,7 @@
     "engagementFixed": "Fixed price",
     "engagementTm": "Time & materials",
     "kickoffAt": "Kickoff",
-    "kickoffHint": "Optional until agenda (Phase 3). Setting a date while Ordered moves the stage to Kickoff planned.",
+    "kickoffHint": "Optional manual date. Prefer Plan kickoff to book a 1h slot with a senior.",
     "advanceTo": "→ {{stage}}",
     "funnelAdvanced": "Stage updated to {{stage}}.",
     "invalidFunnelTransition": "That stage change is not allowed from the current stage.",
@@ -320,5 +321,23 @@
       "paid": "Paid",
       "closed": "Closed"
     }
+  },
+  "agenda": {
+    "weekIntro": "Kickoffs and invoice due dates for the selected week.",
+    "kickoffsTitle": "Kickoffs",
+    "kickoffsEmpty": "No kickoffs this week.",
+    "kickoffLabel": "Kickoff",
+    "planKickoff": "Plan kickoff",
+    "pickerTitle": "Book 1h kickoff",
+    "pickerIntro": "Free slots with senior engineers (Mon–Fri 09:00–17:00, Europe/Amsterdam).",
+    "loading": "Loading availability…",
+    "noSlots": "No free senior slots in the next two weeks.",
+    "bookSlot": "Book",
+    "booked": "Kickoff booked {{when}} with {{who}}.",
+    "slotUnavailable": "That slot is no longer free.",
+    "alreadyBooked": "This project already has a kickoff booked.",
+    "slotInPast": "Cannot book a slot in the past.",
+    "noSeniors": "No active senior resources to assign.",
+    "seniorNotFound": "Selected senior is not available."
   }
 }

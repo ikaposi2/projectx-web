@@ -88,6 +88,28 @@ type ProjectDetail = {
   staffing: ProjectStaffing[];
 };
 
+type AvailabilitySlot = {
+  starts_at: string;
+  ends_at: string;
+  consultant_rate_id: string;
+  display_name: string;
+  duration_minutes: number;
+};
+
+type KickoffAppointment = {
+  id: string;
+  kind: string;
+  consultant_rate_id: string;
+  display_name: string;
+  project_id?: string | null;
+  project_name?: string | null;
+  customer_name?: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  duration_minutes: number;
+};
+
 type ReserveSnapshot = {
   target_eur: number;
   current_reserve_eur: number;
@@ -426,6 +448,10 @@ export default function App() {
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
   const [financeWeekStart, setFinanceWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
+  const [kickoffAppointments, setKickoffAppointments] = useState<KickoffAppointment[]>([]);
+  const [kickoffPickerProjectId, setKickoffPickerProjectId] = useState<string | null>(null);
+  const [kickoffSlots, setKickoffSlots] = useState<AvailabilitySlot[]>([]);
+  const [kickoffLoading, setKickoffLoading] = useState(false);
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [creatingCatalog, setCreatingCatalog] = useState(false);
@@ -639,17 +665,21 @@ export default function App() {
     if (!token) return;
     const weekStartIso = toIsoDate(financeWeekStart);
     try {
-      const [reserveRes, vatRes, compRes, invRes, candRes, companyRes, agendaRes] = await Promise.all([
-        fetch(`${FINANCE_API}/reserve`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/vat`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${FINANCE_API}/invoices/agenda?week_start=${weekStartIso}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
+      const [reserveRes, vatRes, compRes, invRes, candRes, companyRes, agendaRes, kickoffRes] =
+        await Promise.all([
+          fetch(`${FINANCE_API}/reserve`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/vat`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/invoices/agenda?week_start=${weekStartIso}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${PARTNER_API}/appointments?week_start=${weekStartIso}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
       if (
         !reserveRes.ok ||
         !vatRes.ok ||
@@ -668,6 +698,11 @@ export default function App() {
       setBillingCandidates((await candRes.json()) as BillingCandidate[]);
       setCompanyProfile((await companyRes.json()) as CompanyProfile);
       setInvoiceAgenda((await agendaRes.json()) as InvoiceAgendaItem[]);
+      if (kickoffRes.ok) {
+        setKickoffAppointments((await kickoffRes.json()) as KickoffAppointment[]);
+      } else {
+        setKickoffAppointments([]);
+      }
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -941,6 +976,11 @@ export default function App() {
       if (detail === "msp_cannot_have_parent") return t("customer.mspCannotHaveParent");
       if (detail === "invalid_funnel_transition") return t("project.invalidFunnelTransition");
       if (detail === "invalid_funnel_status") return t("project.invalidFunnelStatus");
+      if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
+      if (detail === "kickoff_already_booked") return t("agenda.alreadyBooked");
+      if (detail === "slot_in_past") return t("agenda.slotInPast");
+      if (detail === "no_seniors") return t("agenda.noSeniors");
+      if (detail === "senior_not_found") return t("agenda.seniorNotFound");
       return detail;
     }
     if (Array.isArray(detail)) {
@@ -1268,6 +1308,89 @@ export default function App() {
       await Promise.all([loadManagedProjects(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function openKickoffPicker(project: ProjectDetail) {
+    if (!token) return;
+    setTimeError(null);
+    setKickoffPickerProjectId(project.id);
+    setKickoffSlots([]);
+    setKickoffLoading(true);
+    try {
+      const from = toIsoDate(new Date());
+      const to = toIsoDate(addDays(new Date(), 13));
+      const res = await fetch(
+        `${PARTNER_API}/availability?from=${from}&to=${to}&senior=true`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setKickoffSlots((await res.json()) as AvailabilitySlot[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+      setKickoffPickerProjectId(null);
+    } finally {
+      setKickoffLoading(false);
+    }
+  }
+
+  async function bookKickoffSlot(slot: AvailabilitySlot) {
+    if (!token || !kickoffPickerProjectId) return;
+    const project = managedProjects.find((p) => p.id === kickoffPickerProjectId);
+    if (!project) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    setKickoffLoading(true);
+    try {
+      const bookRes = await fetch(`${PARTNER_API}/appointments`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          starts_at: slot.starts_at,
+          consultant_rate_id: slot.consultant_rate_id,
+          project_id: project.id,
+          project_name: project.name,
+          customer_name: project.customer_name,
+        }),
+      });
+      if (!bookRes.ok) {
+        const detail = await bookRes.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, bookRes.statusText));
+      }
+      const funnelRes = await fetch(`${PROJECT_API}/projects/${project.id}/funnel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          funnel_status: "kickoff_planned",
+          kickoff_at: slot.starts_at,
+        }),
+      });
+      if (!funnelRes.ok) {
+        const detail = await funnelRes.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, funnelRes.statusText));
+      }
+      setAdminStatus(
+        t("agenda.booked", {
+          when: new Date(slot.starts_at).toLocaleString(),
+          who: slot.display_name,
+        }),
+      );
+      setKickoffPickerProjectId(null);
+      setKickoffSlots([]);
+      await Promise.all([loadManagedProjects(), loadBookable(), loadFinance()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    } finally {
+      setKickoffLoading(false);
     }
   }
 
@@ -2311,6 +2434,7 @@ export default function App() {
               <>
                 <section className="panel wide">
                   <h1>{t("finance.agendaTitle")}</h1>
+                  <p className="status">{t("agenda.weekIntro")}</p>
                   <div className="actions week-actions">
                     <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, -7))}>
                       {t("time.prevWeek")}
@@ -2326,6 +2450,27 @@ export default function App() {
                   {overdueCount > 0 ? (
                     <p className="status error">{t("finance.overdueAlert", { count: overdueCount })}</p>
                   ) : null}
+                  <h2>{t("agenda.kickoffsTitle")}</h2>
+                  {kickoffAppointments.length === 0 ? (
+                    <p className="status">{t("agenda.kickoffsEmpty")}</p>
+                  ) : (
+                    <ul className="entry-list">
+                      {kickoffAppointments.map((item) => (
+                        <li key={item.id}>
+                          <div>
+                            <strong>
+                              {t("agenda.kickoffLabel")} · {item.customer_name || "—"} · {item.project_name || "—"}
+                            </strong>
+                            <div className="muted">
+                              {new Date(item.starts_at).toLocaleString()} · {item.display_name} ·{" "}
+                              {item.duration_minutes}m
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <h2>{t("finance.agendaInvoicesTitle")}</h2>
                   {invoiceAgenda.length === 0 ? (
                     <p className="status">{t("finance.agendaEmpty")}</p>
                   ) : (
@@ -3102,6 +3247,7 @@ export default function App() {
                     {managedProjects.map((project) => {
                       const stage = project.funnel_status || "ordered";
                       const next = project.next_funnel || [];
+                      const canPlanKickoff = next.includes("kickoff_planned");
                       return (
                       <li key={project.id}>
                         <div>
@@ -3123,7 +3269,18 @@ export default function App() {
                           </div>
                         </div>
                         <div className="entry-actions">
-                          {next.map((target) => (
+                          {canPlanKickoff ? (
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => void openKickoffPicker(project)}
+                            >
+                              {t("agenda.planKickoff")}
+                            </button>
+                          ) : null}
+                          {next
+                            .filter((target) => target !== "kickoff_planned")
+                            .map((target) => (
                             <button
                               key={target}
                               type="button"
@@ -3140,6 +3297,50 @@ export default function App() {
                       );
                     })}
                   </ul>
+
+                  {kickoffPickerProjectId ? (
+                    <div className="customer-form">
+                      <h2>{t("agenda.pickerTitle")}</h2>
+                      <p className="status">{t("agenda.pickerIntro")}</p>
+                      {kickoffLoading ? <p className="status">{t("agenda.loading")}</p> : null}
+                      {!kickoffLoading && kickoffSlots.length === 0 ? (
+                        <p className="status">{t("agenda.noSlots")}</p>
+                      ) : null}
+                      <ul className="entry-list">
+                        {kickoffSlots.map((slot) => (
+                          <li key={`${slot.consultant_rate_id}-${slot.starts_at}`}>
+                            <div>
+                              <strong>{new Date(slot.starts_at).toLocaleString()}</strong>
+                              <div className="muted">
+                                {slot.display_name} · {slot.duration_minutes}m
+                              </div>
+                            </div>
+                            <div className="entry-actions">
+                              <button
+                                type="button"
+                                className="primary"
+                                disabled={kickoffLoading}
+                                onClick={() => void bookKickoffSlot(slot)}
+                              >
+                                {t("agenda.bookSlot")}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setKickoffPickerProjectId(null);
+                            setKickoffSlots([]);
+                          }}
+                        >
+                          {t("customer.cancel")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {editingProjectId ? (
                     <div className="customer-form">

@@ -190,7 +190,8 @@
     "dueLine": "Vervalt {{date}} ({{days}} dagen)",
     "overdue": "Verlopen",
     "overdueAlert": "{{count}} factuur/facturen verlopen — neem contact op met de klant",
-    "agendaTitle": "Vervaldatum facturen",
+    "agendaTitle": "Weekagenda",
+    "agendaInvoicesTitle": "Vervaldatums facturen",
     "agendaEmpty": "Geen facturen deze week en geen verlopen posten.",
     "internalTitle": "Intern (partners / reserve / BTW)",
     "internalIntro": "De bedrijfsreserve is exclusief BTW. Geïnde BTW staat op een aparte rekening tot de kwartaalaangifte.",
@@ -304,7 +305,7 @@
     "engagementFixed": "Vaste prijs",
     "engagementTm": "Uurtarief (T&M)",
     "kickoffAt": "Kickoff",
-    "kickoffHint": "Optioneel tot agenda (fase 3). Een datum zetten vanuit Ordered zet de fase op Kickoff gepland.",
+    "kickoffHint": "Optionele handmatige datum. Gebruik bij voorkeur Kickoff plannen om een uur met een senior te boeken.",
     "advanceTo": "→ {{stage}}",
     "funnelAdvanced": "Fase bijgewerkt naar {{stage}}.",
     "invalidFunnelTransition": "Die fasewijziging is niet toegestaan vanuit de huidige fase.",
@@ -320,5 +321,23 @@
       "paid": "Betaald",
       "closed": "Gesloten"
     }
+  },
+  "agenda": {
+    "weekIntro": "Kickoffs en factuurvervaldagen voor de geselecteerde week.",
+    "kickoffsTitle": "Kickoffs",
+    "kickoffsEmpty": "Geen kickoffs deze week.",
+    "kickoffLabel": "Kickoff",
+    "planKickoff": "Kickoff plannen",
+    "pickerTitle": "Boek 1 uur kickoff",
+    "pickerIntro": "Vrije slots bij senior engineers (ma–vr 09:00–17:00, Europe/Amsterdam).",
+    "loading": "Beschikbaarheid laden…",
+    "noSlots": "Geen vrije senior-slots in de komende twee weken.",
+    "bookSlot": "Boeken",
+    "booked": "Kickoff geboekt {{when}} met {{who}}.",
+    "slotUnavailable": "Dat slot is niet meer vrij.",
+    "alreadyBooked": "Dit project heeft al een kickoff geboekt.",
+    "slotInPast": "Kan geen slot in het verleden boeken.",
+    "noSeniors": "Geen actieve seniors om toe te wijzen.",
+    "seniorNotFound": "Geselecteerde senior is niet beschikbaar."
   }
 }
