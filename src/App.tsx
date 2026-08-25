@@ -231,7 +231,19 @@ type BillableCheck = {
   missing: string[];
 };
 
-type AppView = "hours" | "admin" | "customers" | "finance" | "catalog" | "projects";
+type Resource = {
+  id: string;
+  partner_id: string;
+  display_name: string;
+  billable_rate_eur: number;
+  kind: "internal" | "external";
+  internal_rate_eur: number;
+  is_senior: boolean;
+  is_partner: boolean;
+  active: boolean;
+};
+
+type AppView = "hours" | "admin" | "customers" | "finance" | "catalog" | "projects" | "resources";
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -402,6 +414,18 @@ export default function App() {
     list_price_eur: "",
     estimated_hours: "",
   });
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
+  const [creatingResource, setCreatingResource] = useState(false);
+  const emptyResourceForm = {
+    display_name: "",
+    kind: "external" as "internal" | "external",
+    billable_rate_eur: "150",
+    internal_rate_eur: "75",
+    is_senior: false,
+    is_partner: false,
+  };
+  const [resourceForm, setResourceForm] = useState(emptyResourceForm);
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
   const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
@@ -637,6 +661,19 @@ export default function App() {
     }
   }, [token]);
 
+  const loadResources = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${PARTNER_API}/resources`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setResources((await res.json()) as Resource[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
   useEffect(() => {
     if (user && token) {
       void loadBookable();
@@ -668,6 +705,12 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadCatalog();
   }, [token, user, view, loadCatalog]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "resources") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadResources();
+  }, [token, user, view, loadResources]);
 
   useEffect(() => {
     if (!token || view !== "projects" || !projectCreateCustomerQuery.trim()) {
@@ -1409,6 +1452,90 @@ export default function App() {
     }
   }
 
+  function openResourceCreate() {
+    setCreatingResource(true);
+    setEditingResourceId(null);
+    setResourceForm(emptyResourceForm);
+  }
+
+  function openResourceEdit(r: Resource) {
+    setCreatingResource(false);
+    setEditingResourceId(r.id);
+    setResourceForm({
+      display_name: r.display_name,
+      kind: r.kind === "internal" ? "internal" : "external",
+      billable_rate_eur: String(r.billable_rate_eur),
+      internal_rate_eur: String(r.internal_rate_eur),
+      is_senior: r.is_senior,
+      is_partner: r.is_partner,
+    });
+  }
+
+  async function saveResource() {
+    if (!token) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    const name = resourceForm.display_name.trim();
+    const billable = Number(resourceForm.billable_rate_eur);
+    const internal = Number(resourceForm.internal_rate_eur);
+    if (!name) {
+      setTimeError(t("resources.missingName"));
+      return;
+    }
+    if (!Number.isFinite(billable) || billable <= 0 || !Number.isFinite(internal) || internal < 0) {
+      setTimeError(t("resources.invalidRates"));
+      return;
+    }
+    const body = {
+      display_name: name,
+      kind: resourceForm.kind,
+      billable_rate_eur: billable,
+      internal_rate_eur: internal,
+      is_senior: resourceForm.is_senior,
+      is_partner: resourceForm.is_partner,
+      active: true,
+    };
+    try {
+      const url = editingResourceId
+        ? `${PARTNER_API}/resources/${editingResourceId}`
+        : `${PARTNER_API}/resources`;
+      const res = await fetch(url, {
+        method: editingResourceId ? "PATCH" : "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAdminStatus(editingResourceId ? t("resources.saved") : t("resources.created"));
+      setEditingResourceId(null);
+      setCreatingResource(false);
+      await loadResources();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function deleteResource(id: string, name: string) {
+    if (!token) return;
+    if (!window.confirm(t("resources.confirmDelete", { name }))) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    try {
+      const res = await fetch(`${PARTNER_API}/resources/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      if (editingResourceId === id) setEditingResourceId(null);
+      setAdminStatus(t("resources.deleted"));
+      await loadResources();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function createProjectFromCatalog() {
     if (!token || !projectCreateCustomerId || !projectCreateServiceId) return;
     setTimeError(null);
@@ -1469,7 +1596,12 @@ export default function App() {
 
   const isManager = Boolean(user && MANAGER_ROLES.has(user.role));
   const activeView: AppView =
-    (view === "admin" || view === "finance" || view === "catalog" || view === "projects") && !isManager
+    (view === "admin" ||
+      view === "finance" ||
+      view === "catalog" ||
+      view === "projects" ||
+      view === "resources") &&
+    !isManager
       ? "hours"
       : view;
   const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
@@ -1697,6 +1829,15 @@ export default function App() {
                 onClick={() => goToView("catalog")}
               >
                 {t("nav.catalog")}
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={view === "resources" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("resources")}
+              >
+                {t("nav.resources")}
               </button>
             ) : null}
             <button
@@ -2549,6 +2690,126 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
+              </section>
+            ) : null}
+
+            {activeView === "resources" && isManager ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("resources.title")}</h1>
+                    <p>{t("resources.intro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button type="button" className="primary" onClick={() => openResourceCreate()}>
+                      {t("resources.add")}
+                    </button>
+                  </div>
+                </div>
+                {adminStatus ? <p className="status">{adminStatus}</p> : null}
+                {timeError ? <p className="status error">{timeError}</p> : null}
+                {creatingResource || editingResourceId ? (
+                  <div className="customer-form">
+                    <h2>{editingResourceId ? t("resources.editTitle") : t("resources.createTitle")}</h2>
+                    <label htmlFor="resName">{t("resources.name")}</label>
+                    <input
+                      id="resName"
+                      value={resourceForm.display_name}
+                      onChange={(e) => setResourceForm((p) => ({ ...p, display_name: e.target.value }))}
+                    />
+                    <label htmlFor="resKind">{t("resources.kindLabel")}</label>
+                    <select
+                      id="resKind"
+                      value={resourceForm.kind}
+                      onChange={(e) =>
+                        setResourceForm((p) => ({
+                          ...p,
+                          kind: e.target.value === "internal" ? "internal" : "external",
+                        }))
+                      }
+                    >
+                      <option value="external">{t("resources.kindExternal")}</option>
+                      <option value="internal">{t("resources.kindInternal")}</option>
+                    </select>
+                    <label htmlFor="resBillable">{t("resources.billableRate")}</label>
+                    <input
+                      id="resBillable"
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={resourceForm.billable_rate_eur}
+                      onChange={(e) => setResourceForm((p) => ({ ...p, billable_rate_eur: e.target.value }))}
+                    />
+                    <label htmlFor="resInternal">{t("resources.internalRate")}</label>
+                    <input
+                      id="resInternal"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={resourceForm.internal_rate_eur}
+                      onChange={(e) => setResourceForm((p) => ({ ...p, internal_rate_eur: e.target.value }))}
+                    />
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={resourceForm.is_senior}
+                        onChange={(e) => setResourceForm((p) => ({ ...p, is_senior: e.target.checked }))}
+                      />
+                      {t("resources.isSenior")}
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={resourceForm.is_partner}
+                        onChange={(e) => setResourceForm((p) => ({ ...p, is_partner: e.target.checked }))}
+                      />
+                      {t("resources.isPartner")}
+                    </label>
+                    <div className="actions">
+                      <button type="button" className="primary" onClick={() => void saveResource()}>
+                        {editingResourceId ? t("resources.save") : t("resources.create")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreatingResource(false);
+                          setEditingResourceId(null);
+                        }}
+                      >
+                        {t("customer.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {resources.filter((r) => r.active).length === 0 ? (
+                  <p className="status">{t("resources.empty")}</p>
+                ) : (
+                  <ul className="entry-list">
+                    {resources
+                      .filter((r) => r.active)
+                      .map((r) => (
+                        <li key={r.id}>
+                          <div>
+                            <strong>{r.display_name}</strong>
+                            <div className="muted">
+                              {t(`resources.kind.${r.kind}`)} · {t("resources.billableRate")} €
+                              {r.billable_rate_eur} · {t("resources.internalRate")} €{r.internal_rate_eur}
+                              {r.is_senior ? ` · ${t("resources.seniorBadge")}` : ""}
+                              {r.is_partner ? ` · ${t("resources.partnerBadge")}` : ""}
+                            </div>
+                          </div>
+                          <div className="entry-actions">
+                            <button type="button" onClick={() => openResourceEdit(r)}>
+                              {t("resources.edit")}
+                            </button>
+                            <button type="button" onClick={() => void deleteResource(r.id, r.display_name)}>
+                              {t("resources.delete")}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                )}
               </section>
             ) : null}
 

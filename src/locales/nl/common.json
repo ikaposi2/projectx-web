@@ -19,6 +19,7 @@
     "projects": "Projecten",
     "finance": "Finance",
     "catalog": "Catalogus",
+    "resources": "Resources",
     "customers": "Klanten"
   },
   "time": {
@@ -254,6 +255,38 @@
     "invalidPrice": "Voer een geldige catalogusprijs in (€0 of meer).",
     "invalidHours": "Voer typische uren groter dan nul in.",
     "missingRequired": "Service-ID en naam zijn verplicht."
+  },
+  "resources": {
+    "title": "Resources",
+    "intro": "Interne en externe mensen voor staffing, kickoff-beschikbaarheid en utilization.",
+    "empty": "Nog geen actieve resources.",
+    "add": "Resource toevoegen",
+    "createTitle": "Nieuwe resource",
+    "editTitle": "Resource bewerken",
+    "create": "Resource aanmaken",
+    "save": "Resource opslaan",
+    "saved": "Resource opgeslagen.",
+    "created": "Resource aangemaakt.",
+    "edit": "Bewerken",
+    "delete": "Verwijderen",
+    "confirmDelete": "Resource “{{name}}” uit de actieve pool verwijderen?",
+    "deleted": "Resource verwijderd.",
+    "name": "Weergavenaam",
+    "kindLabel": "Type",
+    "kindInternal": "Intern",
+    "kindExternal": "Extern",
+    "kind": {
+      "internal": "Intern",
+      "external": "Extern"
+    },
+    "billableRate": "Factureertarief (€/u)",
+    "internalRate": "Intern tarief (€/u)",
+    "isSenior": "Senior (eligible voor kickoff)",
+    "isPartner": "Partner",
+    "seniorBadge": "Senior",
+    "partnerBadge": "Partner",
+    "missingName": "Naam is verplicht.",
+    "invalidRates": "Voer een geldig factureertarief (> 0) en intern tarief (≥ 0) in."
   },
   "project": {
     "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer budgetten, staffing en voortgang.",

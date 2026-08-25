@@ -19,6 +19,7 @@
     "projects": "Projects",
     "finance": "Finance",
     "catalog": "Catalog",
+    "resources": "Resources",
     "customers": "Customers"
   },
   "time": {
@@ -254,6 +255,38 @@
     "invalidPrice": "Enter a valid list price (€0 or more).",
     "invalidHours": "Enter typical hours greater than zero.",
     "missingRequired": "Service ID and name are required."
+  },
+  "resources": {
+    "title": "Resources",
+    "intro": "Internal and external people for staffing, kickoff eligibility, and utilization.",
+    "empty": "No active resources yet.",
+    "add": "Add resource",
+    "createTitle": "New resource",
+    "editTitle": "Edit resource",
+    "create": "Create resource",
+    "save": "Save resource",
+    "saved": "Resource saved.",
+    "created": "Resource created.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Remove resource “{{name}}” from the active pool?",
+    "deleted": "Resource removed.",
+    "name": "Display name",
+    "kindLabel": "Type",
+    "kindInternal": "Internal",
+    "kindExternal": "External",
+    "kind": {
+      "internal": "Internal",
+      "external": "External"
+    },
+    "billableRate": "Billable rate (€/h)",
+    "internalRate": "Internal rate (€/h)",
+    "isSenior": "Senior (eligible for kickoff)",
+    "isPartner": "Partner",
+    "seniorBadge": "Senior",
+    "partnerBadge": "Partner",
+    "missingName": "Name is required.",
+    "invalidRates": "Enter a valid billable rate (> 0) and internal rate (≥ 0)."
   },
   "project": {
     "pageIntro": "Create projects from catalog offerings and manage budgets, staffing, and progress.",
