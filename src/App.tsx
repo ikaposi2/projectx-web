@@ -775,7 +775,8 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadManagedProjects();
     void loadCatalog();
-  }, [token, user, view, loadManagedProjects, loadCatalog]);
+    void loadResources();
+  }, [token, user, view, loadManagedProjects, loadCatalog, loadResources]);
 
   useEffect(() => {
     if (!token || !user || view !== "finance") return;
@@ -1002,6 +1003,11 @@ export default function App() {
       if (detail === "msp_cannot_have_parent") return t("customer.mspCannotHaveParent");
       if (detail === "invalid_funnel_transition") return t("project.invalidFunnelTransition");
       if (detail === "invalid_funnel_status") return t("project.invalidFunnelStatus");
+      if (detail === "staffing_resource_required") return t("budget.staffingResourceRequired");
+      if (detail === "duplicate_staffing") return t("budget.duplicateStaffing");
+      if (detail === "shares_must_sum_100") return t("budget.sharesMustSum");
+      if (detail === "invalid_staffing") return t("budget.invalidStaffing");
+      if (detail === "invalid_rate") return t("budget.invalidRate");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
       if (detail === "kickoff_already_booked") return t("agenda.alreadyBooked");
       if (detail === "slot_in_past") return t("agenda.slotInPast");
@@ -1267,6 +1273,10 @@ export default function App() {
     if (!token || !editingProjectId) return;
     setTimeError(null);
     setAdminStatus(null);
+    if (staffingDraft.some((s) => !s.consultant_rate_id.trim())) {
+      setTimeError(t("budget.staffingResourceRequired"));
+      return;
+    }
     try {
       const res = await fetch(`${PROJECT_API}/projects/${editingProjectId}`, {
         method: "PATCH",
@@ -1289,11 +1299,11 @@ export default function App() {
           report_url: budgetForm.progress === "complete" ? budgetForm.report_url.trim() || null : null,
           kickoff_at: fromDateTimeLocalValue(budgetForm.kickoff_at),
           staffing: staffingDraft.map((s) => ({
+            consultant_rate_id: s.consultant_rate_id,
             display_name: s.display_name.trim(),
             rate_eur: Number(s.rate_eur) || 0,
             share_pct: Number(s.share_pct) || 0,
             partner_id: s.partner_id || undefined,
-            consultant_rate_id: s.consultant_rate_id || undefined,
           })),
         }),
       });
@@ -1307,6 +1317,31 @@ export default function App() {
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
+  }
+
+  function assignStaffingResource(idx: number, resourceId: string) {
+    const resource = resources.find((r) => r.id === resourceId && r.active);
+    setStaffingDraft((prev) =>
+      prev.map((r, i) => {
+        if (i !== idx) return r;
+        if (!resource) {
+          return {
+            ...r,
+            consultant_rate_id: "",
+            partner_id: "",
+            display_name: "",
+            rate_eur: "",
+          };
+        }
+        return {
+          ...r,
+          consultant_rate_id: resource.id,
+          partner_id: resource.partner_id,
+          display_name: resource.display_name,
+          rate_eur: String(resource.billable_rate_eur),
+        };
+      }),
+    );
   }
 
   async function advanceProjectFunnel(projectId: string, funnelStatus: string) {
@@ -3705,19 +3740,34 @@ export default function App() {
 
                       <h3>{t("budget.staffing")}</h3>
                       <p className="status">{t("budget.staffingHint")}</p>
-                      {staffingDraft.map((row, idx) => (
+                      {staffingDraft.map((row, idx) => {
+                        const usedIds = new Set(
+                          staffingDraft
+                            .filter((_, i) => i !== idx)
+                            .map((s) => s.consultant_rate_id)
+                            .filter(Boolean),
+                        );
+                        const options = resources.filter(
+                          (r) =>
+                            r.active &&
+                            (!usedIds.has(r.id) || r.id === row.consultant_rate_id),
+                        );
+                        return (
                         <div key={row.key} className="form-row">
                           <div>
                             <label>{t("budget.consultant")}</label>
-                            <input
-                              value={row.display_name}
-                              onChange={(e) =>
-                                setStaffingDraft((prev) =>
-                                  prev.map((r, i) => (i === idx ? { ...r, display_name: e.target.value } : r)),
-                                )
-                              }
+                            <select
+                              value={row.consultant_rate_id}
+                              onChange={(e) => assignStaffingResource(idx, e.target.value)}
                               required
-                            />
+                            >
+                              <option value="">{t("budget.pickResource")}</option>
+                              {options.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.display_name} · €{r.billable_rate_eur}/h
+                                </option>
+                              ))}
+                            </select>
                           </div>
                           <div>
                             <label>{t("budget.hourlyRate")}</label>
@@ -3733,6 +3783,7 @@ export default function App() {
                               }
                               required
                             />
+                            <p className="field-hint">{t("budget.rateHint")}</p>
                           </div>
                           <div>
                             <label>{t("budget.sharePct")}</label>
@@ -3758,10 +3809,15 @@ export default function App() {
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       <div className="actions">
                         <button
                           type="button"
+                          disabled={
+                            resources.filter((r) => r.active).length === 0 ||
+                            staffingDraft.length >= resources.filter((r) => r.active).length
+                          }
                           onClick={() =>
                             setStaffingDraft((prev) => [
                               ...prev,
@@ -3770,7 +3826,7 @@ export default function App() {
                                 partner_id: "",
                                 consultant_rate_id: "",
                                 display_name: "",
-                                rate_eur: "100",
+                                rate_eur: "",
                                 share_pct: prev.length ? "0" : "100",
                               },
                             ])
