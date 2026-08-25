@@ -31,6 +31,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/customer/, ""),
       },
+      "/api/catalog": {
+        target: "http://127.0.0.1:8006",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/catalog/, ""),
+      },
     },
   },
 });
