@@ -16,6 +16,7 @@
     "menu": "Hoofdmenu",
     "hours": "Urenregistratie",
     "admin": "Urenadministratie",
+    "finance": "Finance",
     "customers": "Klanten"
   },
   "time": {
@@ -126,5 +127,31 @@
     "preview": "Budget €{{budget}} · {{hours}}u · aandeel {{share}}%",
     "save": "Budget opslaan",
     "saved": "Projectbudget opgeslagen."
+  },
+  "finance": {
+    "title": "Finance",
+    "intro": "Schatting van de bedrijfsreserve, partner-chargeback tegen het interne tarief, en conceptfacturen.",
+    "loading": "Finance laden…",
+    "reserve": "Bedrijfsreserve",
+    "reserveLine": "Huidig €{{current}} · doel €{{target}} · surplus €{{surplus}}",
+    "chargebackLine": "Chargeback {{hours}}u × €{{rate}}/u = €{{eur}}",
+    "invoiceTotals": "Facturen concept €{{draft}} · uitgegeven €{{issued}} · betaald €{{paid}}",
+    "compensation": "Partnercompensatie",
+    "compensationEmpty": "Nog geen goedgekeurde uren in het finance-ledger.",
+    "compensationLine": "Billable {{billable}}u · chargeback {{chargeback}}u (€{{eur}})",
+    "invoices": "Facturen",
+    "customerName": "Klant",
+    "amount": "Bedrag (€)",
+    "notes": "Notities",
+    "addInvoice": "Conceptfactuur toevoegen",
+    "invoiceSaved": "Conceptfactuur aangemaakt.",
+    "invoiceUpdated": "Factuur bijgewerkt.",
+    "issue": "Uitgeven",
+    "markPaid": "Markeer betaald",
+    "status": {
+      "draft": "Concept",
+      "issued": "Uitgegeven",
+      "paid": "Betaald"
+    }
   }
 }

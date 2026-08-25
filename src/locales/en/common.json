@@ -16,6 +16,7 @@
     "menu": "Main menu",
     "hours": "Hour reporting",
     "admin": "Hour administration",
+    "finance": "Finance",
     "customers": "Customers"
   },
   "time": {
@@ -126,5 +127,31 @@
     "preview": "Budget €{{budget}} · {{hours}}h · share {{share}}%",
     "save": "Save budget",
     "saved": "Project budget saved."
+  },
+  "finance": {
+    "title": "Finance",
+    "intro": "Company reserve estimate, partner chargeback at the internal rate, and draft invoices.",
+    "loading": "Loading finance…",
+    "reserve": "Company reserve",
+    "reserveLine": "Current €{{current}} · target €{{target}} · surplus €{{surplus}}",
+    "chargebackLine": "Chargeback {{hours}}h × €{{rate}}/h = €{{eur}}",
+    "invoiceTotals": "Invoices draft €{{draft}} · issued €{{issued}} · paid €{{paid}}",
+    "compensation": "Partner compensation",
+    "compensationEmpty": "No approved time entries in the finance ledger yet.",
+    "compensationLine": "Billable {{billable}}h · chargeback {{chargeback}}h (€{{eur}})",
+    "invoices": "Invoices",
+    "customerName": "Customer",
+    "amount": "Amount (€)",
+    "notes": "Notes",
+    "addInvoice": "Add draft invoice",
+    "invoiceSaved": "Invoice draft created.",
+    "invoiceUpdated": "Invoice updated.",
+    "issue": "Issue",
+    "markPaid": "Mark paid",
+    "status": {
+      "draft": "Draft",
+      "issued": "Issued",
+      "paid": "Paid"
+    }
   }
 }
