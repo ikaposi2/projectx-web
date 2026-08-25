@@ -103,10 +103,8 @@
     "projectServiceUnavailable": "Project check is temporarily unavailable. Try again later."
   },
   "budget": {
-    "ratesTitle": "Hourly rates",
-    "ratesIntro": "Consultant rate card. Higher rate means fewer hours for the same budget share.",
     "projectsTitle": "Project budgets",
-    "projectsIntro": "Fixed price minus risk/profit/overhead yields the consultancy budget; staffing converts that to hours.",
+    "projectsIntro": "Fixed price minus risk/profit/overhead yields the consultancy budget. Each staffing line uses that project’s own hourly rate.",
     "edit": "Budget",
     "editTitle": "Edit project budget",
     "fixedPrice": "Fixed price (€)",
@@ -119,19 +117,14 @@
     "ratePct": "Percentage",
     "fixedEur": "Amount (€)",
     "staffing": "Staffing (share of euro budget)",
-    "staffingHint": "Shares must add up to 100%.",
+    "staffingHint": "Shares must add up to 100%. Set the hourly rate per consultant on this project.",
     "consultant": "Consultant",
     "sharePct": "Share %",
+    "hourlyRate": "Hourly rate (€)",
     "addStaff": "Add consultant",
     "remove": "Remove",
     "preview": "Budget €{{budget}} · {{hours}}h · share {{share}}%",
     "save": "Save budget",
-    "saved": "Project budget saved.",
-    "displayName": "Name",
-    "partnerId": "Partner id",
-    "hourlyRate": "Hourly rate (€)",
-    "addRate": "Add rate",
-    "rateSaved": "Rate saved.",
-    "inactive": "inactive"
+    "saved": "Project budget saved."
   }
 }

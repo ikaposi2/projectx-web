@@ -41,22 +41,23 @@ type BookableProject = {
   consultancy_budget_eur?: number;
 };
 
-type ConsultantRate = {
-  id: string;
-  partner_id: string;
-  display_name: string;
-  billable_rate_eur: number;
-  active: boolean;
-};
-
 type ProjectStaffing = {
   id?: string;
-  consultant_rate_id: string;
+  consultant_rate_id?: string;
   partner_id?: string;
-  display_name?: string;
-  rate_eur?: number;
+  display_name: string;
+  rate_eur: number;
   share_pct: number;
   hours?: number;
+};
+
+type StaffingDraftRow = {
+  key: string;
+  partner_id: string;
+  consultant_rate_id: string;
+  display_name: string;
+  rate_eur: string;
+  share_pct: string;
 };
 
 type ProjectDetail = {
@@ -193,7 +194,6 @@ export default function App() {
   const [timeError, setTimeError] = useState<string | null>(null);
   const [adminStatus, setAdminStatus] = useState<string | null>(null);
   const [view, setView] = useState<AppView>("hours");
-  const [consultants, setConsultants] = useState<ConsultantRate[]>([]);
   const [managedProjects, setManagedProjects] = useState<ProjectDetail[]>([]);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [budgetForm, setBudgetForm] = useState({
@@ -208,14 +208,7 @@ export default function App() {
     overhead_rate: "10",
     overhead_fixed_eur: "0",
   });
-  const [staffingDraft, setStaffingDraft] = useState<{ consultant_rate_id: string; share_pct: string }[]>(
-    [],
-  );
-  const [rateForm, setRateForm] = useState({
-    partner_id: "",
-    display_name: "",
-    billable_rate_eur: "100",
-  });
+  const [staffingDraft, setStaffingDraft] = useState<StaffingDraftRow[]>([]);
   const activeCellKey = useRef<string | null>(null);
 
   const weekDates = useMemo(
@@ -372,19 +365,6 @@ export default function App() {
     }
   }, [token]);
 
-  const loadConsultants = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${PARTNER_API}/consultants`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setConsultants((await res.json()) as ConsultantRate[]);
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "error");
-    }
-  }, [token]);
-
   const loadManagedProjects = useCallback(async () => {
     if (!token) return;
     try {
@@ -420,8 +400,7 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadAdminEntries();
     void loadManagedProjects();
-    void loadConsultants();
-  }, [token, user, view, loadAdminEntries, loadManagedProjects, loadConsultants]);
+  }, [token, user, view, loadAdminEntries, loadManagedProjects]);
 
   useEffect(() => {
     if (!token || view !== "customers") return;
@@ -732,14 +711,13 @@ export default function App() {
       );
     const safeBudget = Math.max(0, budget);
     const rows = staffingDraft.map((s) => {
-      const consultant = consultants.find((c) => c.id === s.consultant_rate_id);
-      const rate = consultant?.billable_rate_eur ?? 0;
+      const rate = Number(s.rate_eur) || 0;
       const share = Number(s.share_pct) || 0;
       const euro = safeBudget * (share / 100);
       const hours = rate > 0 ? euro / rate : 0;
       return {
-        consultant_rate_id: s.consultant_rate_id,
-        label: consultant?.display_name ?? s.consultant_rate_id,
+        key: s.key,
+        label: s.display_name.trim() || "—",
         rate,
         share,
         hours,
@@ -770,7 +748,11 @@ export default function App() {
     setStaffingDraft(
       project.staffing.length
         ? project.staffing.map((s) => ({
-            consultant_rate_id: s.consultant_rate_id,
+            key: s.id || s.consultant_rate_id || crypto.randomUUID(),
+            partner_id: s.partner_id || "",
+            consultant_rate_id: s.consultant_rate_id || "",
+            display_name: s.display_name || "",
+            rate_eur: String(s.rate_eur ?? ""),
             share_pct: String(s.share_pct),
           }))
         : [],
@@ -801,8 +783,11 @@ export default function App() {
           overhead_rate: Number(budgetForm.overhead_rate) || 0,
           overhead_fixed_eur: Number(budgetForm.overhead_fixed_eur) || 0,
           staffing: staffingDraft.map((s) => ({
-            consultant_rate_id: s.consultant_rate_id,
+            display_name: s.display_name.trim(),
+            rate_eur: Number(s.rate_eur) || 0,
             share_pct: Number(s.share_pct) || 0,
+            partner_id: s.partner_id || undefined,
+            consultant_rate_id: s.consultant_rate_id || undefined,
           })),
         }),
       });
@@ -813,36 +798,6 @@ export default function App() {
       setAdminStatus(t("budget.saved"));
       setEditingProjectId(null);
       await Promise.all([loadManagedProjects(), loadBookable()]);
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "error");
-    }
-  }
-
-  async function saveConsultantRate(e: FormEvent) {
-    e.preventDefault();
-    if (!token || !rateForm.display_name.trim() || !rateForm.partner_id.trim()) return;
-    setTimeError(null);
-    try {
-      const res = await fetch(`${PARTNER_API}/consultants`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          partner_id: rateForm.partner_id.trim(),
-          display_name: rateForm.display_name.trim(),
-          billable_rate_eur: Number(rateForm.billable_rate_eur) || 0,
-          active: true,
-        }),
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
-      }
-      setRateForm({ partner_id: "", display_name: "", billable_rate_eur: "100" });
-      setAdminStatus(t("budget.rateSaved"));
-      await loadConsultants();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -1424,55 +1379,6 @@ export default function App() {
                 </section>
 
                 <section className="panel wide">
-                  <h2>{t("budget.ratesTitle")}</h2>
-                  <p className="status">{t("budget.ratesIntro")}</p>
-                  <ul className="entry-list">
-                    {consultants.map((c) => (
-                      <li key={c.id}>
-                        <div>
-                          <strong>{c.display_name}</strong>
-                          <div className="muted">
-                            {c.partner_id} · €{c.billable_rate_eur}/h
-                            {!c.active ? ` · ${t("budget.inactive")}` : ""}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <form className="customer-form" onSubmit={(e) => void saveConsultantRate(e)}>
-                    <label htmlFor="rateName">{t("budget.displayName")}</label>
-                    <input
-                      id="rateName"
-                      value={rateForm.display_name}
-                      onChange={(e) => setRateForm((p) => ({ ...p, display_name: e.target.value }))}
-                      required
-                    />
-                    <label htmlFor="ratePartner">{t("budget.partnerId")}</label>
-                    <input
-                      id="ratePartner"
-                      value={rateForm.partner_id}
-                      onChange={(e) => setRateForm((p) => ({ ...p, partner_id: e.target.value }))}
-                      required
-                    />
-                    <label htmlFor="rateEur">{t("budget.hourlyRate")}</label>
-                    <input
-                      id="rateEur"
-                      type="number"
-                      min="1"
-                      step="0.01"
-                      value={rateForm.billable_rate_eur}
-                      onChange={(e) => setRateForm((p) => ({ ...p, billable_rate_eur: e.target.value }))}
-                      required
-                    />
-                    <div className="actions">
-                      <button className="primary" type="submit">
-                        {t("budget.addRate")}
-                      </button>
-                    </div>
-                  </form>
-                </section>
-
-                <section className="panel wide">
                   <h2>{t("budget.projectsTitle")}</h2>
                   <p className="status">{t("budget.projectsIntro")}</p>
                   <ul className="entry-list">
@@ -1564,27 +1470,33 @@ export default function App() {
                       <h3>{t("budget.staffing")}</h3>
                       <p className="status">{t("budget.staffingHint")}</p>
                       {staffingDraft.map((row, idx) => (
-                        <div key={`${row.consultant_rate_id}-${idx}`} className="form-row">
+                        <div key={row.key} className="form-row">
                           <div>
                             <label>{t("budget.consultant")}</label>
-                            <select
-                              value={row.consultant_rate_id}
+                            <input
+                              value={row.display_name}
                               onChange={(e) =>
                                 setStaffingDraft((prev) =>
-                                  prev.map((r, i) =>
-                                    i === idx ? { ...r, consultant_rate_id: e.target.value } : r,
-                                  ),
+                                  prev.map((r, i) => (i === idx ? { ...r, display_name: e.target.value } : r)),
                                 )
                               }
-                            >
-                              {consultants
-                                .filter((c) => c.active)
-                                .map((c) => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.display_name} (€{c.billable_rate_eur}/h)
-                                  </option>
-                                ))}
-                            </select>
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label>{t("budget.hourlyRate")}</label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="0.01"
+                              value={row.rate_eur}
+                              onChange={(e) =>
+                                setStaffingDraft((prev) =>
+                                  prev.map((r, i) => (i === idx ? { ...r, rate_eur: e.target.value } : r)),
+                                )
+                              }
+                              required
+                            />
                           </div>
                           <div>
                             <label>{t("budget.sharePct")}</label>
@@ -1614,14 +1526,19 @@ export default function App() {
                       <div className="actions">
                         <button
                           type="button"
-                          onClick={() => {
-                            const first = consultants.find((c) => c.active);
-                            if (!first) return;
+                          onClick={() =>
                             setStaffingDraft((prev) => [
                               ...prev,
-                              { consultant_rate_id: first.id, share_pct: prev.length ? "0" : "100" },
-                            ]);
-                          }}
+                              {
+                                key: crypto.randomUUID(),
+                                partner_id: "",
+                                consultant_rate_id: "",
+                                display_name: "",
+                                rate_eur: "100",
+                                share_pct: prev.length ? "0" : "100",
+                              },
+                            ])
+                          }
                         >
                           {t("budget.addStaff")}
                         </button>
@@ -1636,7 +1553,7 @@ export default function App() {
                       </p>
                       <ul className="entry-list">
                         {budgetPreview.rows.map((r) => (
-                          <li key={r.consultant_rate_id + r.share}>
+                          <li key={r.key}>
                             <div>
                               <strong>{r.label}</strong>
                               <div className="muted">

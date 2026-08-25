@@ -103,10 +103,8 @@
     "projectServiceUnavailable": "Projectcontrole tijdelijk niet beschikbaar. Probeer het later opnieuw."
   },
   "budget": {
-    "ratesTitle": "Uurtarieven",
-    "ratesIntro": "Tarievenkaart voor consultants. Senior tarief = minder uren bij dezelfde budgetshare.",
     "projectsTitle": "Projectbudgetten",
-    "projectsIntro": "Vaste prijs minus risico/marge/overhead bepaalt het consultancybudget; staffing zet dat om in uren.",
+    "projectsIntro": "Vaste prijs minus risico/marge/overhead bepaalt het consultancybudget. Elk staffing-regel gebruikt het uurtarief van dit project.",
     "edit": "Budget",
     "editTitle": "Projectbudget bewerken",
     "fixedPrice": "Vaste prijs (€)",
@@ -119,19 +117,14 @@
     "ratePct": "Percentage",
     "fixedEur": "Bedrag (€)",
     "staffing": "Staffing (aandeel in eurobudget)",
-    "staffingHint": "Percentages moeten samen 100% zijn.",
+    "staffingHint": "Percentages moeten samen 100% zijn. Stel het uurtarief per consultant op dit project in.",
     "consultant": "Consultant",
     "sharePct": "Aandeel %",
+    "hourlyRate": "Uurtarief (€)",
     "addStaff": "Consultant toevoegen",
     "remove": "Verwijderen",
     "preview": "Budget €{{budget}} · {{hours}}u · aandeel {{share}}%",
     "save": "Budget opslaan",
-    "saved": "Projectbudget opgeslagen.",
-    "displayName": "Naam",
-    "partnerId": "Partner-id",
-    "hourlyRate": "Uurtarief (€)",
-    "addRate": "Tarief toevoegen",
-    "rateSaved": "Tarief opgeslagen.",
-    "inactive": "inactief"
+    "saved": "Projectbudget opgeslagen."
   }
 }
