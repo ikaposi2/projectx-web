@@ -393,7 +393,15 @@ export default function App() {
   const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
+  const [creatingCatalog, setCreatingCatalog] = useState(false);
   const [catalogForm, setCatalogForm] = useState({ list_price_eur: "", estimated_hours: "", name_en: "" });
+  const [newCatalogForm, setNewCatalogForm] = useState({
+    service_id: "",
+    version: "1.0.0",
+    name_en: "",
+    list_price_eur: "",
+    estimated_hours: "",
+  });
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
   const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
@@ -1271,6 +1279,16 @@ export default function App() {
     if (!token) return;
     setTimeError(null);
     setAdminStatus(null);
+    const listPrice = Number(catalogForm.list_price_eur);
+    const estimatedHours = Number(catalogForm.estimated_hours);
+    if (!Number.isFinite(listPrice) || listPrice < 0) {
+      setTimeError(t("catalog.invalidPrice"));
+      return;
+    }
+    if (!Number.isFinite(estimatedHours) || estimatedHours <= 0) {
+      setTimeError(t("catalog.invalidHours"));
+      return;
+    }
     try {
       const res = await fetch(
         `${CATALOG_API}/services/${serviceId}?version=${encodeURIComponent(version)}`,
@@ -1281,8 +1299,8 @@ export default function App() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            list_price_eur: Number(catalogForm.list_price_eur) || 0,
-            estimated_hours: Number(catalogForm.estimated_hours) || 0,
+            list_price_eur: listPrice,
+            estimated_hours: estimatedHours,
             name_en: catalogForm.name_en.trim() || undefined,
           }),
         },
@@ -1290,6 +1308,79 @@ export default function App() {
       if (!res.ok) throw new Error(await res.text());
       setAdminStatus(t("catalog.saved"));
       setEditingCatalogId(null);
+      await loadCatalog();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function createCatalogService() {
+    if (!token) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    const listPrice = Number(newCatalogForm.list_price_eur);
+    const estimatedHours = Number(newCatalogForm.estimated_hours);
+    const serviceId = newCatalogForm.service_id.trim();
+    const nameEn = newCatalogForm.name_en.trim();
+    if (!serviceId || !nameEn) {
+      setTimeError(t("catalog.missingRequired"));
+      return;
+    }
+    if (!Number.isFinite(listPrice) || listPrice < 0) {
+      setTimeError(t("catalog.invalidPrice"));
+      return;
+    }
+    if (!Number.isFinite(estimatedHours) || estimatedHours <= 0) {
+      setTimeError(t("catalog.invalidHours"));
+      return;
+    }
+    try {
+      const res = await fetch(`${CATALOG_API}/services`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          service_id: serviceId,
+          version: newCatalogForm.version.trim() || "1.0.0",
+          name_en: nameEn,
+          list_price_eur: listPrice,
+          estimated_hours: estimatedHours,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAdminStatus(t("catalog.created"));
+      setCreatingCatalog(false);
+      setNewCatalogForm({
+        service_id: "",
+        version: "1.0.0",
+        name_en: "",
+        list_price_eur: "",
+        estimated_hours: "",
+      });
+      await loadCatalog();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function deleteCatalogService(serviceId: string, version: string) {
+    if (!token) return;
+    if (!window.confirm(t("catalog.confirmDelete"))) return;
+    setTimeError(null);
+    setAdminStatus(null);
+    try {
+      const res = await fetch(
+        `${CATALOG_API}/services/${serviceId}?version=${encodeURIComponent(version)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      if (editingCatalogId === `${serviceId}|${version}`) setEditingCatalogId(null);
+      setAdminStatus(t("catalog.deleted"));
       await loadCatalog();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -2263,10 +2354,75 @@ export default function App() {
 
             {activeView === "catalog" && isManager ? (
               <section className="panel wide">
-                <h1>{t("catalog.title")}</h1>
-                <p>{t("catalog.intro")}</p>
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("catalog.title")}</h1>
+                    <p>{t("catalog.intro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => {
+                        setCreatingCatalog(true);
+                        setEditingCatalogId(null);
+                      }}
+                    >
+                      {t("catalog.add")}
+                    </button>
+                  </div>
+                </div>
                 {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 {timeError ? <p className="status error">{timeError}</p> : null}
+                {creatingCatalog ? (
+                  <div className="customer-form">
+                    <h2>{t("catalog.createTitle")}</h2>
+                    <label htmlFor="catNewId">{t("catalog.serviceId")}</label>
+                    <input
+                      id="catNewId"
+                      value={newCatalogForm.service_id}
+                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, service_id: e.target.value }))}
+                    />
+                    <label htmlFor="catNewVersion">{t("catalog.version")}</label>
+                    <input
+                      id="catNewVersion"
+                      value={newCatalogForm.version}
+                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, version: e.target.value }))}
+                    />
+                    <label htmlFor="catNewName">{t("catalog.name")}</label>
+                    <input
+                      id="catNewName"
+                      value={newCatalogForm.name_en}
+                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, name_en: e.target.value }))}
+                    />
+                    <label htmlFor="catNewPrice">{t("catalog.listPrice")}</label>
+                    <input
+                      id="catNewPrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newCatalogForm.list_price_eur}
+                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, list_price_eur: e.target.value }))}
+                    />
+                    <label htmlFor="catNewHours">{t("catalog.typicalHours")}</label>
+                    <input
+                      id="catNewHours"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={newCatalogForm.estimated_hours}
+                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, estimated_hours: e.target.value }))}
+                    />
+                    <div className="actions">
+                      <button type="button" className="primary" onClick={() => void createCatalogService()}>
+                        {t("catalog.create")}
+                      </button>
+                      <button type="button" onClick={() => setCreatingCatalog(false)}>
+                        {t("customer.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {catalogServices.length === 0 ? (
                   <p className="status">{t("catalog.empty")}</p>
                 ) : (
@@ -2284,6 +2440,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => {
+                              setCreatingCatalog(false);
                               setEditingCatalogId(`${s.service_id}|${s.version}`);
                               setCatalogForm({
                                 name_en: s.name.en || "",
@@ -2293,6 +2450,12 @@ export default function App() {
                             }}
                           >
                             {t("catalog.edit")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteCatalogService(s.service_id, s.version)}
+                          >
+                            {t("catalog.delete")}
                           </button>
                         </div>
                       </li>
