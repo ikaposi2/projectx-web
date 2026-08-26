@@ -943,6 +943,7 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadFinance();
     void loadManagedProjects();
+    void loadResources();
     void loadMonthlyCosts();
     void loadAllMonthlyCosts();
   }, [
@@ -952,6 +953,7 @@ export default function App() {
     loadFinance,
     financeWeekStart,
     loadManagedProjects,
+    loadResources,
     loadMonthlyCosts,
     loadAllMonthlyCosts,
   ]);
@@ -2284,21 +2286,67 @@ export default function App() {
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.subtotal_eur, 0);
   const otherCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
-  const personnelBillableCost = compensation
+  const resourceByPartner = new Map<string, Resource>();
+  const resourceById = new Map<string, Resource>();
+  for (const r of resources) {
+    if (r.partner_id) resourceByPartner.set(r.partner_id, r);
+    resourceById.set(r.id, r);
+  }
+  const staffingFor = (partnerId: string, projectId: string | null | undefined) => {
+    if (!projectId) return undefined;
+    const project = managedProjects.find((p) => p.id === projectId);
+    if (!project?.staffing.length) return undefined;
+    return (
+      project.staffing.find((s) => s.partner_id === partnerId) ||
+      (project.staffing.length === 1 ? project.staffing[0] : undefined)
+    );
+  };
+  const resourceForPartner = (partnerId: string, projectId: string | null | undefined) => {
+    const direct = resourceByPartner.get(partnerId);
+    if (direct) return direct;
+    const staff = staffingFor(partnerId, projectId);
+    if (staff?.consultant_rate_id) {
+      const byStaff = resourceById.get(staff.consultant_rate_id);
+      if (byStaff) return byStaff;
+    }
+    const active = resources.filter((r) => r.active);
+    return active.length === 1 ? active[0] : undefined;
+  };
+  const expectedBillableRate = (partnerId: string, projectId: string | null | undefined) => {
+    const staff = staffingFor(partnerId, projectId);
+    if (staff && staff.rate_eur > 0) return staff.rate_eur;
+    if (projectId) {
+      const project = managedProjects.find((p) => p.id === projectId);
+      if (project && project.staffing.length > 1) {
+        const shareSum = project.staffing.reduce((s, st) => s + (st.share_pct || 0), 0);
+        if (shareSum > 0) {
+          return (
+            project.staffing.reduce((s, st) => s + st.rate_eur * (st.share_pct || 0), 0) / shareSum
+          );
+        }
+      }
+    }
+    return resourceForPartner(partnerId, projectId)?.billable_rate_eur || 0;
+  };
+  const actualInternalRate = (partnerId: string, projectId: string | null | undefined) =>
+    resourceForPartner(partnerId, projectId)?.internal_rate_eur || 0;
+  // Billable ledger stores rate=0 by design; derive expected (billable) vs actual (internal) from resources/staffing.
+  const approvedBillableHours = compensation
     .filter((c) => c.classification !== "approved_non_billable")
-    .reduce((s, c) => s + c.hours * (c.rate_eur || 0), 0);
+    .reduce((s, c) => s + c.hours, 0);
+  const personnelExpectedCost = compensation.reduce((s, c) => {
+    if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
+    return s + c.hours * expectedBillableRate(c.partner_id, c.project_id);
+  }, 0);
+  const personnelActualCost = compensation.reduce((s, c) => {
+    if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
+    return s + c.hours * actualInternalRate(c.partner_id, c.project_id);
+  }, 0);
   const personnelNonBillableCost = compensation
     .filter((c) => c.classification === "approved_non_billable")
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
-  const personnelCostTotal = personnelBillableCost + personnelNonBillableCost;
+  const personnelCostTotal = personnelActualCost;
   const nonPersonnelCostTotal = accruedNonPersonnel(allMonthlyCosts, monthKey(new Date()));
-  const nonPersonnelBreakdown = [...allMonthlyCosts]
-    .map((c) => {
-      const accrued = accruedNonPersonnel([c], monthKey(new Date()));
-      return { ...c, accrued };
-    })
-    .filter((c) => c.accrued > 0)
-    .sort((a, b) => b.accrued - a.accrued);
   const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
@@ -3615,42 +3663,23 @@ export default function App() {
                     <h3>{t("finance.costOverviewTitle")}</h3>
                     <p className="status">{t("finance.costOverviewIntro")}</p>
                     <p className="status">
-                      {t("finance.personnelCostTotal", { eur: personnelCostTotal.toFixed(2) })}
+                      {t("finance.approvedHoursLine", { hours: approvedBillableHours })}
+                    </p>
+                    <p className="status">
+                      {t("finance.personnelExpectedCost", { eur: personnelExpectedCost.toFixed(2) })}
+                    </p>
+                    <p className="muted">{t("finance.personnelExpectedHint")}</p>
+                    <p className="status">
+                      {t("finance.personnelActualCost", { eur: personnelActualCost.toFixed(2) })}
                     </p>
                     <p className="muted">
-                      {t("finance.personnelCostDetail", {
-                        billable: personnelBillableCost.toFixed(2),
-                        nonBillable: personnelNonBillableCost.toFixed(2),
+                      {t("finance.personnelActualHint", {
+                        chargeback: personnelNonBillableCost.toFixed(2),
                       })}
                     </p>
                     <p className="status">
                       {t("finance.nonPersonnelCostTotal", { eur: nonPersonnelCostTotal.toFixed(2) })}
                     </p>
-                    {nonPersonnelBreakdown.length === 0 ? (
-                      <p className="status">{t("finance.nonPersonnelEmpty")}</p>
-                    ) : (
-                      <ul className="entry-list">
-                        {nonPersonnelBreakdown.map((row) => (
-                          <li key={row.id}>
-                            <div>
-                              <strong>
-                                {row.label} · €{row.accrued.toFixed(2)}
-                              </strong>
-                              <div className="muted">
-                                {row.cadence === "recurring"
-                                  ? t("finance.costRecurringRange", {
-                                      start: row.start_month,
-                                      end: row.end_month || t("finance.costOngoing"),
-                                    })
-                                  : t("finance.costOneOffMonth", { month: row.start_month })}
-                                {` · €${row.amount_eur.toFixed(2)}`}
-                                {row.cadence === "recurring" ? t("finance.perMonth") : ""}
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
                     <p className="status">
                       {t("finance.grossProfit", { eur: grossProfit.toFixed(2) })}
                     </p>
