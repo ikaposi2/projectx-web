@@ -669,6 +669,9 @@ const emptyCustomerForm = {
 };
 
 const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+/** Kickoff office-hour starts (Europe/Amsterdam), Mon–Fri 09:00–16:00. */
+const KICKOFF_HOUR_STARTS = [9, 10, 11, 12, 13, 14, 15, 16] as const;
+const KICKOFF_HORIZON_DAYS = 90;
 
 function startOfIsoWeek(d: Date): Date {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -685,6 +688,26 @@ function addDays(d: Date, days: number): Date {
 
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/** Date (YYYY-MM-DD) + hour in Europe/Amsterdam for agenda matching. */
+function amsterdamDateHour(iso: string): { date: string; hour: number } {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value || "";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: Number(get("hour")),
+  };
 }
 
 /** datetime-local value from ISO (local timezone). */
@@ -854,6 +877,10 @@ export default function App() {
   const [kickoffPickerProjectId, setKickoffPickerProjectId] = useState<string | null>(null);
   const [kickoffSlots, setKickoffSlots] = useState<AvailabilitySlot[]>([]);
   const [kickoffLoading, setKickoffLoading] = useState(false);
+  const [kickoffWeekStart, setKickoffWeekStart] = useState(() => startOfIsoWeek(new Date()));
+  const [kickoffHorizonEnd, setKickoffHorizonEnd] = useState(() =>
+    toIsoDate(addDays(new Date(), KICKOFF_HORIZON_DAYS)),
+  );
   const [resourceCalendarWeek, setResourceCalendarWeek] = useState(() => startOfIsoWeek(new Date()));
   const [resourceCalendar, setResourceCalendar] = useState<KickoffAppointment[]>([]);
   const [agendaResourceId, setAgendaResourceId] = useState<string>("");
@@ -2037,10 +2064,13 @@ export default function App() {
     setTimeError(null);
     setKickoffPickerProjectId(project.id);
     setKickoffSlots([]);
+    const todayWeek = startOfIsoWeek(new Date());
+    setKickoffWeekStart(todayWeek);
+    const from = toIsoDate(new Date());
+    const to = toIsoDate(addDays(new Date(), KICKOFF_HORIZON_DAYS));
+    setKickoffHorizonEnd(to);
     setKickoffLoading(true);
     try {
-      const from = toIsoDate(new Date());
-      const to = toIsoDate(addDays(new Date(), 13));
       const res = await fetch(
         `${PARTNER_API}/availability?from=${from}&to=${to}&senior=true`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -2786,6 +2816,19 @@ export default function App() {
     (a) => a.kind === "pto" || a.kind === "unavailable" || a.kind === "kickoff",
   );
   const resourceAgendaDates = DAY_KEYS.map((_, i) => toIsoDate(addDays(resourceCalendarWeek, i)));
+  const kickoffAgendaDates = DAY_KEYS.slice(0, 5).map((_, i) => toIsoDate(addDays(kickoffWeekStart, i)));
+  const kickoffMinWeek = startOfIsoWeek(new Date());
+  const kickoffMaxWeek = startOfIsoWeek(addDays(new Date(kickoffHorizonEnd + "T12:00:00Z"), 0));
+  const kickoffFreeByCell = useMemo(() => {
+    const map = new Map<string, AvailabilitySlot>();
+    for (const slot of kickoffSlots) {
+      const { date, hour } = amsterdamDateHour(slot.starts_at);
+      if (!(KICKOFF_HOUR_STARTS as readonly number[]).includes(hour)) continue;
+      const key = `${date}|${hour}`;
+      if (!map.has(key)) map.set(key, slot);
+    }
+    return map;
+  }, [kickoffSlots]);
   const agendaResources = resources
     .filter((r) => r.active)
     .filter((r) => !agendaResourceId || r.id === agendaResourceId);
@@ -5929,32 +5972,97 @@ export default function App() {
                       <h2>{t("agenda.pickerTitle")}</h2>
                       <p className="status">{t("agenda.pickerIntro")}</p>
                       <p className="field-hint">{t("agenda.pickerBusyHint")}</p>
+                      <div className="actions week-actions">
+                        <button
+                          type="button"
+                          disabled={kickoffWeekStart.getTime() <= kickoffMinWeek.getTime()}
+                          onClick={() =>
+                            setKickoffWeekStart((w) => {
+                              const prev = addDays(w, -7);
+                              return prev.getTime() < kickoffMinWeek.getTime() ? kickoffMinWeek : prev;
+                            })
+                          }
+                        >
+                          {t("time.prevWeek")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKickoffWeekStart(startOfIsoWeek(new Date()))}
+                        >
+                          {t("time.thisWeek")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={kickoffWeekStart.getTime() >= kickoffMaxWeek.getTime()}
+                          onClick={() =>
+                            setKickoffWeekStart((w) => {
+                              const next = addDays(w, 7);
+                              return next.getTime() > kickoffMaxWeek.getTime() ? kickoffMaxWeek : next;
+                            })
+                          }
+                        >
+                          {t("time.nextWeek")}
+                        </button>
+                      </div>
+                      <p className="week-range">
+                        {formatWeekRange(kickoffWeekStart, i18n.language)} · {t("agenda.pickerHorizon")}
+                      </p>
                       {kickoffLoading ? <p className="status">{t("agenda.loading")}</p> : null}
-                      {!kickoffLoading && kickoffSlots.length === 0 ? (
-                        <p className="status">{t("agenda.noSlots")}</p>
+                      {!kickoffLoading ? (
+                        <div className="timesheet-scroll">
+                          <table className="timesheet-grid agenda-grid kickoff-agenda-grid">
+                            <thead>
+                              <tr>
+                                <th scope="col">{t("agenda.hour")}</th>
+                                {DAY_KEYS.slice(0, 5).map((day, i) => (
+                                  <th key={day} scope="col">
+                                    <span className="day-name">{t(`time.days.${day}`)}</span>
+                                    <span className="day-date">{kickoffAgendaDates[i].slice(8)}</span>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {KICKOFF_HOUR_STARTS.map((hour) => (
+                                <tr key={hour}>
+                                  <th scope="row">
+                                    <span className="row-label">
+                                      {String(hour).padStart(2, "0")}:00
+                                    </span>
+                                  </th>
+                                  {kickoffAgendaDates.map((date) => {
+                                    const slot = kickoffFreeByCell.get(`${date}|${hour}`);
+                                    const past =
+                                      new Date(`${date}T${String(hour).padStart(2, "0")}:00:00`).getTime() <
+                                      Date.now();
+                                    return (
+                                      <td key={`${date}-${hour}`}>
+                                        {past ? (
+                                          <span className="muted">—</span>
+                                        ) : slot ? (
+                                          <button
+                                            type="button"
+                                            className="primary kickoff-free-btn"
+                                            disabled={kickoffLoading}
+                                            title={slot.display_name}
+                                            onClick={() => void bookKickoffSlot(slot)}
+                                          >
+                                            {t("agenda.slotFree")}
+                                          </button>
+                                        ) : (
+                                          <span className="muted kickoff-busy">
+                                            {t("agenda.notAvailable")}
+                                          </span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       ) : null}
-                      <ul className="entry-list">
-                        {kickoffSlots.map((slot) => (
-                          <li key={`${slot.consultant_rate_id}-${slot.starts_at}`}>
-                            <div>
-                              <strong>{new Date(slot.starts_at).toLocaleString()}</strong>
-                              <div className="muted">
-                                {slot.display_name} · {slot.duration_minutes}m
-                              </div>
-                            </div>
-                            <div className="entry-actions">
-                              <button
-                                type="button"
-                                className="primary"
-                                disabled={kickoffLoading}
-                                onClick={() => void bookKickoffSlot(slot)}
-                              >
-                                {t("agenda.bookSlot")}
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
                       <div className="actions">
                         <button
                           type="button"

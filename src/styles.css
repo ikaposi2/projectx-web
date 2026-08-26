@@ -810,6 +810,24 @@ body {
   min-width: 7.5rem;
 }
 
+.kickoff-agenda-grid td {
+  text-align: center;
+  vertical-align: middle;
+  min-width: 5.5rem;
+}
+
+.kickoff-free-btn {
+  width: 100%;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.kickoff-busy {
+  font-size: 0.75rem;
+  display: inline-block;
+  line-height: 1.2;
+}
+
 .agenda-day-list {
   list-style: none;
   margin: 0;
