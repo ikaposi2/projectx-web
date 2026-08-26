@@ -292,6 +292,7 @@
     "compensationUndo": "Undo",
     "compensationUndone": "Compensation entry undone; hours reopened for editing.",
     "compensationInvoiced": "Already on an invoice — undo blocked.",
+    "compensationProjectClosed": "Project is closed — undo blocked.",
     "costsTitle": "Costs",
     "costMonth": "Month",
     "costBillable": "Billable-hour cost this month: €{{eur}}",

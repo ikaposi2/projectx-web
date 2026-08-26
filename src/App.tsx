@@ -151,6 +151,7 @@ type CompensationEffect = {
   rate_eur: number;
   amount_eur: number;
   can_undo: boolean;
+  undo_blocked_reason?: string | null;
   updated_at?: string | null;
 };
 
@@ -1595,6 +1596,8 @@ export default function App() {
       if (detail === "proposal_already_exists") return t("finance.personnelProposalExists");
       if (detail === "no_hours_for_month") return t("finance.personnelNoHours");
       if (detail === "invalid_month") return t("finance.personnelInvalidMonth");
+      if (detail === "already_invoiced") return t("finance.compensationInvoiced");
+      if (detail === "project_closed") return t("finance.compensationProjectClosed");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
       if (detail === "invalid_range") return t("agenda.invalidRange");
       if (detail === "range_too_large") return t("agenda.rangeTooLarge");
@@ -4496,10 +4499,24 @@ export default function App() {
                               <button
                                 type="button"
                                 disabled={!row.can_undo}
+                                title={
+                                  row.undo_blocked_reason === "project_closed"
+                                    ? t("finance.compensationProjectClosed")
+                                    : row.undo_blocked_reason === "already_invoiced"
+                                      ? t("finance.compensationInvoiced")
+                                      : undefined
+                                }
                                 onClick={() => void undoCompensation(row.time_entry_id)}
                               >
                                 {t("finance.compensationUndo")}
                               </button>
+                              {!row.can_undo ? (
+                                <div className="muted">
+                                  {row.undo_blocked_reason === "project_closed"
+                                    ? t("finance.compensationProjectClosed")
+                                    : t("finance.compensationInvoiced")}
+                                </div>
+                              ) : null}
                             </div>
                           </li>
                         ))}

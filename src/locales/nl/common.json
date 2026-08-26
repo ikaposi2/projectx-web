@@ -292,6 +292,7 @@
     "compensationUndo": "Ongedaan maken",
     "compensationUndone": "Compensatie-entry ongedaan gemaakt; uren weer open voor bewerking.",
     "compensationInvoiced": "Staat al op een factuur — ongedaan maken geblokkeerd.",
+    "compensationProjectClosed": "Project is gesloten — ongedaan maken geblokkeerd.",
     "costsTitle": "Kosten",
     "costMonth": "Maand",
     "costBillable": "Kosten billable uren deze maand: €{{eur}}",
