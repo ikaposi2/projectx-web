@@ -279,7 +279,7 @@
     "kpisTitle": "KPIs",
     "profitByProject": "Profitability per project",
     "kpiEmpty": "No projects to score yet.",
-    "profitLine": "Hours×rate €{{spent}} vs sales €{{sales}}",
+    "profitLine": "{{hours}}h booked · hours×rate €{{spent}} vs sales €{{sales}}",
     "billedOverview": "Billed (net) by quarter",
     "billedEmpty": "Nothing billed yet.",
     "billedAnnual": "Annual billed (net): €{{eur}}",

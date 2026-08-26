@@ -279,7 +279,7 @@
     "kpisTitle": "KPI’s",
     "profitByProject": "Winstgevendheid per project",
     "kpiEmpty": "Nog geen projecten om te beoordelen.",
-    "profitLine": "Uren×tarief €{{spent}} vs sales €{{sales}}",
+    "profitLine": "{{hours}}u geboekt · uren×tarief €{{spent}} vs sales €{{sales}}",
     "billedOverview": "Gefactureerd (netto) per kwartaal",
     "billedEmpty": "Nog niets gefactureerd.",
     "billedAnnual": "Jaar gefactureerd (netto): €{{eur}}",

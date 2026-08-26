@@ -2310,13 +2310,32 @@ export default function App() {
     sales: number;
     status: "green" | "yellow" | "red";
     pct: number;
+    hoursBooked: number;
   } {
-    const hoursBooked = Math.max(0, (p.contracted_hours || 0) - (p.remaining_hours || 0));
-    const avgRate =
+    // Prefer approved hours from the finance ledger — contracted−remaining is capped at
+    // the budget once remaining hits 0, so overruns would look artificially profitable.
+    const billableComp = compensation.filter(
+      (c) => c.project_id === p.id && c.classification !== "approved_non_billable",
+    );
+    const hoursFromLedger = billableComp.reduce((s, c) => s + c.hours, 0);
+    const spentFromLedger = billableComp.reduce(
+      (s, c) => s + c.hours * (c.rate_eur || 0),
+      0,
+    );
+    const hoursFromBudget = Math.max(0, (p.contracted_hours || 0) - (p.remaining_hours || 0));
+    const hoursBooked = hoursFromLedger > 0 ? hoursFromLedger : hoursFromBudget;
+
+    const shareSum = p.staffing.reduce((s, st) => s + (st.share_pct || 0), 0);
+    const weightedRate =
       p.staffing.length > 0
-        ? p.staffing.reduce((s, st) => s + st.rate_eur, 0) / p.staffing.length
+        ? shareSum > 0
+          ? p.staffing.reduce((s, st) => s + st.rate_eur * (st.share_pct || 0), 0) / shareSum
+          : p.staffing.reduce((s, st) => s + st.rate_eur, 0) / p.staffing.length
         : 0;
-    const spent = hoursBooked * avgRate;
+    const spent =
+      spentFromLedger > 0
+        ? spentFromLedger
+        : hoursBooked * (weightedRate || 0);
     const risk =
       p.risk_mode === "fixed" ? p.risk_fixed_eur : (p.fixed_price_eur * p.risk_rate) / 100;
     const profit =
@@ -2327,7 +2346,7 @@ export default function App() {
     if (spent > sales) status = "red";
     else if (spent > thresholdYellow) status = "yellow";
     const pct = sales > 0 ? Math.min(100, (spent / sales) * 100) : 0;
-    return { spent, sales, status, pct };
+    return { spent, sales, status, pct, hoursBooked };
   }
   const weekDateSet = new Set(weekDates);
   // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
@@ -3546,7 +3565,7 @@ export default function App() {
                     ) : (
                       <ul className="entry-list">
                         {managedProjects.map((p) => {
-                          const { spent, sales, status, pct } = projectProfitStatus(p);
+                          const { spent, sales, status, pct, hoursBooked } = projectProfitStatus(p);
                           return (
                             <li key={p.id}>
                               <div className="finance-project-card">
@@ -3557,6 +3576,7 @@ export default function App() {
                                   {t("finance.profitLine", {
                                     spent: spent.toFixed(0),
                                     sales: sales.toFixed(0),
+                                    hours: hoursBooked,
                                   })}
                                 </div>
                                 <div className="bar-track" aria-hidden>
