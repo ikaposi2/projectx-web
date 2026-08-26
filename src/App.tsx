@@ -834,20 +834,68 @@ export default function App() {
     [entries, user],
   );
 
+  const pendingHoursByProject = useMemo(() => {
+    const map = new Map<string, number>();
+    const weekSet = new Set(weekDates);
+    const weekCellKeys = new Set<string>();
+
+    for (const date of weekDates) {
+      for (const rowId of [...projects.map((p) => p.id), ...budgets.map((b) => b.id)]) {
+        const key = `${rowId}|${date}`;
+        weekCellKeys.add(key);
+        const entry = myEntries.find((e) => e.project_id === rowId && e.work_date === date);
+        // Approved hours are already deducted from remaining_hours; rejected do not count.
+        if (entry?.status === "approved" || entry?.status === "rejected") continue;
+
+        const draft = draftHours[key];
+        if (draft !== undefined) {
+          const n = Number(String(draft).replace(",", "."));
+          const hours = Number.isFinite(n) && n > 0 ? n : 0;
+          if (hours > 0) map.set(rowId, (map.get(rowId) || 0) + hours);
+          continue;
+        }
+        if (entry?.status === "submitted") {
+          map.set(rowId, (map.get(rowId) || 0) + entry.hours);
+        }
+      }
+    }
+
+    for (const entry of myEntries) {
+      if (!entry.project_id || entry.status !== "submitted") continue;
+      if (weekSet.has(entry.work_date) && weekCellKeys.has(`${entry.project_id}|${entry.work_date}`)) {
+        continue;
+      }
+      map.set(entry.project_id, (map.get(entry.project_id) || 0) + entry.hours);
+    }
+    return map;
+  }, [myEntries, weekDates, projects, budgets, draftHours]);
+
   const rows: GridRow[] = useMemo(() => {
+    const formatRemain = (n: number) => {
+      const rounded = Math.round(n * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    };
     const bookable: GridRow[] = [
-      ...projects.map((p) => ({
-        id: p.id,
-        label: `${p.customer_name} · ${p.name}`,
-        subtitle: String(p.remaining_hours),
-        classification: "billable" as const,
-      })),
-      ...budgets.map((b) => ({
-        id: b.id,
-        label: b.name,
-        subtitle: String(b.remaining_hours),
-        classification: "non_billable" as const,
-      })),
+      ...projects.map((p) => {
+        const pending = pendingHoursByProject.get(p.id) || 0;
+        const live = (p.remaining_hours || 0) - pending;
+        return {
+          id: p.id,
+          label: `${p.customer_name} · ${p.name}`,
+          subtitle: formatRemain(live),
+          classification: "billable" as const,
+        };
+      }),
+      ...budgets.map((b) => {
+        const pending = pendingHoursByProject.get(b.id) || 0;
+        const live = (b.remaining_hours || 0) - pending;
+        return {
+          id: b.id,
+          label: b.name,
+          subtitle: formatRemain(live),
+          classification: "non_billable" as const,
+        };
+      }),
     ];
     const known = new Set(bookable.map((r) => r.id));
     const historical: GridRow[] = [];
@@ -864,7 +912,7 @@ export default function App() {
       known.add(entry.project_id);
     }
     return [...bookable, ...historical];
-  }, [projects, budgets, myEntries, projectLabels]);
+  }, [projects, budgets, myEntries, projectLabels, pendingHoursByProject]);
 
   const entryByKey = useMemo(() => {
     const rank = (status: TimeEntry["status"]) =>
@@ -1616,6 +1664,7 @@ export default function App() {
     if (!token) return;
     setTimeError(null);
     setAdminStatus(null);
+    const target = adminEntries.find((e) => e.id === id) || entries.find((e) => e.id === id);
     try {
       const res = await fetch(`${TIME_API}/entries/${id}/${action}`, {
         method: "POST",
@@ -1626,10 +1675,42 @@ export default function App() {
         throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
       }
       setAdminStatus(t(`time.actionOk.${action}`));
+      // Optimistic remaining so the counter does not jump while NATS catches up.
+      if (target?.project_id) {
+        let delta = 0;
+        if (action === "approve") delta = -target.hours;
+        else if (action === "refuse" && target.status === "approved") delta = target.hours;
+        if (delta !== 0) {
+          if (target.classification === "billable") {
+            setProjects((prev) =>
+              prev.map((p) =>
+                p.id === target.project_id
+                  ? {
+                      ...p,
+                      remaining_hours: Math.round((p.remaining_hours + delta) * 100) / 100,
+                    }
+                  : p,
+              ),
+            );
+          } else {
+            setBudgets((prev) =>
+              prev.map((b) =>
+                b.id === target.project_id
+                  ? {
+                      ...b,
+                      remaining_hours: Math.round((b.remaining_hours + delta) * 100) / 100,
+                    }
+                  : b,
+              ),
+            );
+          }
+        }
+      }
       await Promise.all([loadEntries(), loadAdminEntries()]);
-      // Partner/project consumers apply remaining hours asynchronously.
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await loadBookable();
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 250 + i * 150));
+        await loadBookable();
+      }
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
