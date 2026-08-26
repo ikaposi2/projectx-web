@@ -93,6 +93,7 @@ type AvailabilitySlot = {
   ends_at: string;
   consultant_rate_id: string;
   display_name: string;
+  partner_id: string;
   duration_minutes: number;
 };
 
@@ -1961,15 +1962,60 @@ export default function App() {
         const detail = await funnelRes.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, funnelRes.statusText));
       }
+
+      // First paid hour: 1h billable kickoff on the senior, auto-approved.
+      const kickoffDay = new Date(slot.starts_at);
+      const workDate = [
+        kickoffDay.getFullYear(),
+        String(kickoffDay.getMonth() + 1).padStart(2, "0"),
+        String(kickoffDay.getDate()).padStart(2, "0"),
+      ].join("-");
+      let hoursWarning: string | null = null;
+      if (slot.partner_id) {
+        const hoursRes = await fetch(`${TIME_API}/entries`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            work_date: workDate,
+            hours: 1,
+            classification: "billable",
+            description: t("agenda.kickoffHoursDescription"),
+            project_id: project.id,
+            partner_id: slot.partner_id,
+            auto_approve: true,
+          }),
+        });
+        if (!hoursRes.ok) {
+          const detail = await hoursRes.json().catch(() => ({}));
+          hoursWarning = formatApiError(detail.detail, hoursRes.statusText);
+        }
+      } else {
+        hoursWarning = t("agenda.kickoffHoursMissingPartner");
+      }
+
       setAdminStatus(
-        t("agenda.booked", {
-          when: new Date(slot.starts_at).toLocaleString(),
-          who: slot.display_name,
-        }),
+        hoursWarning
+          ? `${t("agenda.booked", {
+              when: new Date(slot.starts_at).toLocaleString(),
+              who: slot.display_name,
+            })} ${t("agenda.kickoffHoursFailed", { detail: hoursWarning })}`
+          : t("agenda.bookedWithHours", {
+              when: new Date(slot.starts_at).toLocaleString(),
+              who: slot.display_name,
+            }),
       );
       setKickoffPickerProjectId(null);
       setKickoffSlots([]);
-      await Promise.all([loadManagedProjects(), loadBookable(), loadFinance()]);
+      await Promise.all([
+        loadManagedProjects(),
+        loadBookable(),
+        loadFinance(),
+        loadEntries(),
+        loadAdminEntries(),
+      ]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     } finally {
