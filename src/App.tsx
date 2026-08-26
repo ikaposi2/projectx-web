@@ -284,9 +284,145 @@ type Resource = {
   active: boolean;
 };
 
-type AppView = "hours" | "admin" | "customers" | "finance" | "catalog" | "projects" | "resources";
+type AppView =
+  | "home"
+  | "hours"
+  | "admin"
+  | "customers"
+  | "finance"
+  | "catalog"
+  | "projects"
+  | "resources"
+  | "planning";
 type FinancePanel = "operational" | "billing" | "costs" | "kpis" | null;
+type KpiHorizon = "monthly" | "quarterly" | "annually";
 type UnavailSlot = "am" | "pm" | "after";
+type NavIconName =
+  | "home"
+  | "hours"
+  | "admin"
+  | "customers"
+  | "projects"
+  | "planning"
+  | "finance"
+  | "catalog"
+  | "resources"
+  | "menu"
+  | "flowCustomer"
+  | "flowProject"
+  | "flowConfig"
+  | "flowHours"
+  | "flowApprove"
+  | "flowClose"
+  | "flowBill";
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const common = {
+    className: name.startsWith("flow") ? "flow-icon" : "nav-icon",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  switch (name) {
+    case "home":
+      return (
+        <svg {...common}>
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M6 10.5V20h12v-9.5" />
+        </svg>
+      );
+    case "hours":
+    case "flowHours":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v5l3 2" />
+        </svg>
+      );
+    case "admin":
+    case "flowApprove":
+      return (
+        <svg {...common}>
+          <path d="M9 12l2 2 4-4" />
+          <path d="M5 6h14v12H5z" />
+        </svg>
+      );
+    case "customers":
+    case "flowCustomer":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3 19c0-3 2.5-5 6-5s6 2 6 5" />
+          <circle cx="17" cy="9" r="2.5" />
+          <path d="M16 19c1.5-.8 3-2.2 3-4.5" />
+        </svg>
+      );
+    case "projects":
+    case "flowProject":
+      return (
+        <svg {...common}>
+          <path d="M4 8h16v11H4z" />
+          <path d="M8 8V6h8v2" />
+        </svg>
+      );
+    case "planning":
+      return (
+        <svg {...common}>
+          <path d="M5 5h14v14H5z" />
+          <path d="M5 10h14M10 5v14" />
+        </svg>
+      );
+    case "finance":
+    case "flowBill":
+      return (
+        <svg {...common}>
+          <path d="M6 4h12v16H6z" />
+          <path d="M9 9h6M9 13h6M9 17h4" />
+        </svg>
+      );
+    case "catalog":
+      return (
+        <svg {...common}>
+          <path d="M6 4h9l3 3v13H6z" />
+          <path d="M15 4v3h3M9 12h6M9 16h6" />
+        </svg>
+      );
+    case "resources":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="9" r="2.5" />
+          <circle cx="16" cy="9" r="2.5" />
+          <path d="M4 19c0-2.5 2-4 4-4s4 1.5 4 4M12 19c0-2.5 2-4 4-4s4 1.5 4 4" />
+        </svg>
+      );
+    case "flowConfig":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      );
+    case "flowClose":
+      return (
+        <svg {...common}>
+          <path d="M6 6h12v12H6z" />
+          <path d="M9 12h6" />
+        </svg>
+      );
+    case "menu":
+      return (
+        <svg {...common}>
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 
 const UNAVAIL_SLOTS: { id: UnavailSlot; labelKey: string; startHour: number }[] = [
   { id: "am", labelKey: "agenda.slotAm", startHour: 9 },
@@ -422,46 +558,61 @@ function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function monthsFromTo(start: string, end: string): string[] {
-  const out: string[] = [];
-  let y = Number(start.slice(0, 4));
-  let m = Number(start.slice(5, 7));
-  const ey = Number(end.slice(0, 4));
-  const em = Number(end.slice(5, 7));
-  if (!y || !m || !ey || !em || start > end) return out;
-  while (y < ey || (y === ey && m <= em)) {
-    out.push(`${y}-${String(m).padStart(2, "0")}`);
-    m += 1;
-    if (m > 12) {
-      m = 1;
-      y += 1;
-    }
+/** Months covered by a KPI horizon anchored on YYYY-MM. */
+function monthsForKpiHorizon(anchorMonth: string, horizon: KpiHorizon): string[] {
+  const y = Number(anchorMonth.slice(0, 4));
+  const m = Number(anchorMonth.slice(5, 7));
+  if (!y || !m) return [];
+  if (horizon === "monthly") return [anchorMonth];
+  if (horizon === "quarterly") {
+    const qStart = Math.floor((m - 1) / 3) * 3 + 1;
+    return [0, 1, 2].map((i) => `${y}-${String(qStart + i).padStart(2, "0")}`);
   }
-  return out;
+  return Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
 }
 
-/** Accrued non-personnel € from definitions up to (and including) `throughMonth`. */
-function accruedNonPersonnel(
+function kpiPeriodLabel(anchorMonth: string, horizon: KpiHorizon): string {
+  const y = anchorMonth.slice(0, 4);
+  const m = Number(anchorMonth.slice(5, 7));
+  if (horizon === "monthly") return anchorMonth;
+  if (horizon === "quarterly") return `${y}-Q${Math.ceil(m / 3)}`;
+  return y;
+}
+
+/**
+ * Non-personnel costs for a set of months.
+ * One-offs counted when their month is in range; recurring counted × months active in range
+ * (so a full quarter/year of an ongoing cost is ×3 / ×12).
+ */
+function nonPersonnelForMonths(
   costs: {
     amount_eur: number;
     cadence: string;
     start_month: string;
     end_month: string | null;
   }[],
-  throughMonth: string,
+  months: string[],
 ): number {
+  if (months.length === 0) return 0;
+  const monthSet = new Set(months);
   let sum = 0;
   for (const c of costs) {
     if (c.cadence === "one_off") {
-      if (c.start_month <= throughMonth) sum += c.amount_eur || 0;
+      if (monthSet.has(c.start_month)) sum += c.amount_eur || 0;
       continue;
     }
-    if (c.start_month > throughMonth) continue;
-    const end =
-      c.end_month && c.end_month < throughMonth ? c.end_month : throughMonth;
-    sum += (c.amount_eur || 0) * monthsFromTo(c.start_month, end).length;
+    const active = months.filter(
+      (mo) => mo >= c.start_month && (!c.end_month || mo <= c.end_month),
+    ).length;
+    sum += (c.amount_eur || 0) * active;
   }
   return sum;
+}
+
+function isoInMonths(iso: string | null | undefined, months: string[]): boolean {
+  if (!iso) return false;
+  const key = iso.slice(0, 7);
+  return months.includes(key);
 }
 
 export default function App() {
@@ -493,7 +644,9 @@ export default function App() {
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
   const [adminStatus, setAdminStatus] = useState<string | null>(null);
-  const [view, setView] = useState<AppView>("hours");
+  const [view, setView] = useState<AppView>("home");
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [managedProjects, setManagedProjects] = useState<ProjectDetail[]>([]);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [budgetForm, setBudgetForm] = useState({
@@ -520,6 +673,8 @@ export default function App() {
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
   const [financePanel, setFinancePanel] = useState<FinancePanel>(null);
+  const [kpiHorizon, setKpiHorizon] = useState<KpiHorizon>("monthly");
+  const [kpiAnchorMonth, setKpiAnchorMonth] = useState(() => monthKey(new Date()));
   const [invoiceSearch, setInvoiceSearch] = useState({ q: "", date: "", id: "" });
   const [financeWeekStart, setFinanceWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
@@ -965,7 +1120,7 @@ export default function App() {
   }, [token, user, view, loadCatalog]);
 
   useEffect(() => {
-    if (!token || !user || view !== "resources") return;
+    if (!token || !user || (view !== "resources" && view !== "planning")) return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadResources();
     void loadResourceCalendar();
@@ -976,6 +1131,12 @@ export default function App() {
     if (!token || !user || view !== "resources") return;
     void loadProjectAgenda();
   }, [token, user, view, loadProjectAgenda]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "home") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadManagedProjects();
+  }, [token, user, view, loadManagedProjects]);
 
   useEffect(() => {
     if (!token || view !== "projects" || !projectCreateCustomerQuery.trim()) {
@@ -2206,9 +2367,10 @@ export default function App() {
       view === "finance" ||
       view === "catalog" ||
       view === "projects" ||
-      view === "resources") &&
+      view === "resources" ||
+      view === "planning") &&
     !isManager
-      ? "hours"
+      ? "home"
       : view;
   const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
   const weekKickoffs = kickoffAppointments.filter((a) => a.kind === "kickoff");
@@ -2276,13 +2438,17 @@ export default function App() {
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   })();
-  const billedAnnual = invoices
+  const kpiMonths = monthsForKpiHorizon(kpiAnchorMonth, kpiHorizon);
+  const kpiPeriod = kpiPeriodLabel(kpiAnchorMonth, kpiHorizon);
+  const periodCompensation = compensation.filter((c) => isoInMonths(c.updated_at, kpiMonths));
+  const periodInvoices = invoices.filter((i) => isoInMonths(i.issued_at, kpiMonths));
+  const billedPeriod = periodInvoices
     .filter((i) => i.status === "issued" || i.status === "paid")
     .reduce((s, i) => s + i.subtotal_eur, 0);
-  const receivedTotal = invoices
+  const receivedPeriod = periodInvoices
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.amount_eur, 0);
-  const revenueNetPaid = invoices
+  const revenueNetPaid = periodInvoices
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.subtotal_eur, 0);
   const otherCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
@@ -2331,22 +2497,23 @@ export default function App() {
   const actualInternalRate = (partnerId: string, projectId: string | null | undefined) =>
     resourceForPartner(partnerId, projectId)?.internal_rate_eur || 0;
   // Billable ledger stores rate=0 by design; derive expected (billable) vs actual (internal) from resources/staffing.
-  const approvedBillableHours = compensation
+  const approvedBillableHours = periodCompensation
     .filter((c) => c.classification !== "approved_non_billable")
     .reduce((s, c) => s + c.hours, 0);
-  const personnelExpectedCost = compensation.reduce((s, c) => {
+  const personnelExpectedCost = periodCompensation.reduce((s, c) => {
     if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
     return s + c.hours * expectedBillableRate(c.partner_id, c.project_id);
   }, 0);
-  const personnelActualCost = compensation.reduce((s, c) => {
+  const personnelActualCost = periodCompensation.reduce((s, c) => {
     if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
     return s + c.hours * actualInternalRate(c.partner_id, c.project_id);
   }, 0);
-  const personnelNonBillableCost = compensation
+  const personnelNonBillableCost = periodCompensation
     .filter((c) => c.classification === "approved_non_billable")
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
   const personnelCostTotal = personnelActualCost;
-  const nonPersonnelCostTotal = accruedNonPersonnel(allMonthlyCosts, monthKey(new Date()));
+  // Recurring monthly costs × months in the selected horizon (×1 / ×3 / ×12 when fully active).
+  const nonPersonnelCostTotal = nonPersonnelForMonths(allMonthlyCosts, kpiMonths);
   const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
@@ -2415,6 +2582,7 @@ export default function App() {
     }
     setAdminStatus(null);
     setView(next);
+    setNavOpen(false);
   }
 
   function dayClass(index: number): string {
@@ -2506,9 +2674,36 @@ export default function App() {
   return (
     <div className={user ? "shell app-shell" : "shell"}>
       <header className="topbar">
-        <div className="brand">
-          {displayName}
-          <span>.</span>
+        <div className="topbar-left">
+          {user ? (
+            <>
+              <button
+                type="button"
+                className="nav-toggle"
+                aria-expanded={navOpen}
+                aria-controls="side-nav"
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.matchMedia("(max-width: 800px)").matches) {
+                    setNavOpen((o) => !o);
+                  } else {
+                    setNavCollapsed((c) => !c);
+                  }
+                }}
+              >
+                <NavIcon name="menu" />
+                <span className="nav-label">{t("nav.toggle")}</span>
+              </button>
+              <div className="brand">
+                {displayName}
+                <span>.</span>
+              </div>
+            </>
+          ) : (
+            <div className="brand">
+              {displayName}
+              <span>.</span>
+            </div>
+          )}
         </div>
         <div className="topbar-right">
           {user ? (
@@ -2583,71 +2778,205 @@ export default function App() {
           </section>
         </main>
       ) : (
-        <div className="app-body">
-          <nav className="side-nav" aria-label={t("nav.menu")}>
+        <div
+          className={`app-body${navCollapsed ? " nav-collapsed" : ""}${navOpen ? " nav-open" : ""}`}
+        >
+          <nav id="side-nav" className="side-nav" aria-label={t("nav.menu")}>
             <p className="nav-user">{t("app.welcome", { name: user.full_name })}</p>
             <button
               type="button"
-              className={view === "hours" ? "nav-item active" : "nav-item"}
-              onClick={() => goToView("hours")}
+              className={activeView === "home" ? "nav-item active" : "nav-item"}
+              onClick={() => goToView("home")}
+              title={t("nav.home")}
             >
-              {t("nav.hours")}
+              <NavIcon name="home" />
+              <span className="nav-label">{t("nav.home")}</span>
+            </button>
+            <button
+              type="button"
+              className={activeView === "customers" ? "nav-item active" : "nav-item"}
+              onClick={() => goToView("customers")}
+              title={t("nav.customers")}
+            >
+              <NavIcon name="customers" />
+              <span className="nav-label">{t("nav.customers")}</span>
             </button>
             {isManager ? (
               <button
                 type="button"
-                className={view === "admin" ? "nav-item active" : "nav-item"}
-                onClick={() => goToView("admin")}
-              >
-                {t("nav.admin")}
-              </button>
-            ) : null}
-            {isManager ? (
-              <button
-                type="button"
-                className={view === "projects" ? "nav-item active" : "nav-item"}
+                className={activeView === "projects" ? "nav-item active" : "nav-item"}
                 onClick={() => goToView("projects")}
+                title={t("nav.projects")}
               >
-                {t("nav.projects")}
+                <NavIcon name="projects" />
+                <span className="nav-label">{t("nav.projects")}</span>
               </button>
             ) : null}
             {isManager ? (
               <button
                 type="button"
-                className={view === "finance" ? "nav-item active" : "nav-item"}
-                onClick={() => goToView("finance")}
+                className={activeView === "planning" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("planning")}
+                title={t("nav.planning")}
               >
-                {t("nav.finance")}
-              </button>
-            ) : null}
-            {isManager ? (
-              <button
-                type="button"
-                className={view === "catalog" ? "nav-item active" : "nav-item"}
-                onClick={() => goToView("catalog")}
-              >
-                {t("nav.catalog")}
-              </button>
-            ) : null}
-            {isManager ? (
-              <button
-                type="button"
-                className={view === "resources" ? "nav-item active" : "nav-item"}
-                onClick={() => goToView("resources")}
-              >
-                {t("nav.resources")}
+                <NavIcon name="planning" />
+                <span className="nav-label">{t("nav.planning")}</span>
               </button>
             ) : null}
             <button
               type="button"
-              className={view === "customers" ? "nav-item active" : "nav-item"}
-              onClick={() => goToView("customers")}
+              className={activeView === "hours" ? "nav-item active" : "nav-item"}
+              onClick={() => goToView("hours")}
+              title={t("nav.hours")}
             >
-              {t("nav.customers")}
+              <NavIcon name="hours" />
+              <span className="nav-label">{t("nav.hours")}</span>
             </button>
+            {isManager ? (
+              <button
+                type="button"
+                className={activeView === "admin" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("admin")}
+                title={t("nav.admin")}
+              >
+                <NavIcon name="admin" />
+                <span className="nav-label">{t("nav.admin")}</span>
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={activeView === "finance" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("finance")}
+                title={t("nav.finance")}
+              >
+                <NavIcon name="finance" />
+                <span className="nav-label">{t("nav.finance")}</span>
+                {openProjects.length > 0 ? (
+                  <span className="nav-badge" title={t("home.openProjects", { count: openProjects.length })}>
+                    {openProjects.length}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={activeView === "catalog" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("catalog")}
+                title={t("nav.catalog")}
+              >
+                <NavIcon name="catalog" />
+                <span className="nav-label">{t("nav.catalog")}</span>
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
+                className={activeView === "resources" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("resources")}
+                title={t("nav.resources")}
+              >
+                <NavIcon name="resources" />
+                <span className="nav-label">{t("nav.resources")}</span>
+              </button>
+            ) : null}
           </nav>
 
           <main className="workspace">
+            {activeView === "home" ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("home.title")}</h1>
+                    <p>{t("home.intro")}</p>
+                  </div>
+                </div>
+                <div className="home-flow" aria-label={t("home.flowLabel")}>
+                  {(
+                    [
+                      {
+                        key: "customer",
+                        icon: "flowCustomer" as const,
+                        view: "customers" as AppView,
+                        title: t("home.steps.customer"),
+                        hint: t("home.steps.customerHint"),
+                      },
+                      {
+                        key: "project",
+                        icon: "flowProject" as const,
+                        view: "projects" as AppView,
+                        title: t("home.steps.project"),
+                        hint: t("home.steps.projectHint"),
+                        managerOnly: true,
+                      },
+                      {
+                        key: "configure",
+                        icon: "flowConfig" as const,
+                        view: "projects" as AppView,
+                        title: t("home.steps.configure"),
+                        hint: t("home.steps.configureHint"),
+                        managerOnly: true,
+                      },
+                      {
+                        key: "hours",
+                        icon: "flowHours" as const,
+                        view: "hours" as AppView,
+                        title: t("home.steps.hours"),
+                        hint: t("home.steps.hoursHint"),
+                      },
+                      {
+                        key: "approve",
+                        icon: "flowApprove" as const,
+                        view: "admin" as AppView,
+                        title: t("home.steps.approve"),
+                        hint: t("home.steps.approveHint"),
+                        managerOnly: true,
+                      },
+                      {
+                        key: "close",
+                        icon: "flowClose" as const,
+                        view: "projects" as AppView,
+                        title: t("home.steps.close"),
+                        hint: t("home.steps.closeHint"),
+                        managerOnly: true,
+                      },
+                      {
+                        key: "bill",
+                        icon: "flowBill" as const,
+                        view: "finance" as AppView,
+                        title: t("home.steps.bill"),
+                        hint: t("home.steps.billHint"),
+                        managerOnly: true,
+                        badge: openProjects.length,
+                      },
+                    ] as const
+                  )
+                    .filter((step) => !("managerOnly" in step && step.managerOnly) || isManager)
+                    .map((step) => (
+                      <button
+                        key={step.key}
+                        type="button"
+                        className="flow-step"
+                        onClick={() => goToView(step.view)}
+                      >
+                        {"badge" in step && step.badge && step.badge > 0 ? (
+                          <span className="flow-badge">{step.badge}</span>
+                        ) : null}
+                        <NavIcon name={step.icon} />
+                        <strong>{step.title}</strong>
+                        <span>{step.hint}</span>
+                      </button>
+                    ))}
+                </div>
+                {isManager && openProjects.length > 0 ? (
+                  <p className="status">
+                    {t("home.openProjectsCue", { count: openProjects.length })}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
             {activeView === "customers" ? (
               <section className="panel wide">
                 <div className="week-nav">
@@ -3607,6 +3936,41 @@ export default function App() {
                 {financePanel === "kpis" ? (
                   <section className="panel wide">
                     <h2>{t("finance.kpisTitle")}</h2>
+                    <div className="finance-hub-actions" role="tablist" aria-label={t("finance.kpiHorizons")}>
+                      {(
+                        [
+                          ["monthly", "finance.kpiMonthly"],
+                          ["quarterly", "finance.kpiQuarterly"],
+                          ["annually", "finance.kpiAnnually"],
+                        ] as const
+                      ).map(([id, labelKey]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="tab"
+                          aria-selected={kpiHorizon === id}
+                          className={kpiHorizon === id ? "primary" : ""}
+                          onClick={() => setKpiHorizon(id)}
+                        >
+                          {t(labelKey)}
+                        </button>
+                      ))}
+                    </div>
+                    <label htmlFor="kpiAnchorMonth">{t("finance.kpiAnchor")}</label>
+                    <input
+                      id="kpiAnchorMonth"
+                      type="month"
+                      value={kpiAnchorMonth}
+                      onChange={(e) => setKpiAnchorMonth(e.target.value)}
+                    />
+                    <p className="status">
+                      {t("finance.kpiPeriodLine", {
+                        period: kpiPeriod,
+                        months: kpiMonths.length,
+                      })}
+                    </p>
+                    <p className="muted">{t("finance.kpiRecurringHint")}</p>
+
                     <h3>{t("finance.profitByProject")}</h3>
                     {managedProjects.length === 0 ? (
                       <p className="status">{t("finance.kpiEmpty")}</p>
@@ -3640,28 +4004,43 @@ export default function App() {
                       </ul>
                     )}
                     <h3>{t("finance.billedOverview")}</h3>
-                    {billedByQuarter.length === 0 ? (
-                      <p className="status">{t("finance.billedEmpty")}</p>
-                    ) : (
+                    {kpiHorizon !== "monthly" &&
+                    billedByQuarter.filter(([label]) =>
+                      kpiHorizon === "quarterly"
+                        ? label === kpiPeriod
+                        : label.startsWith(`${kpiPeriod}-`),
+                    ).length > 0 ? (
                       <ul className="entry-list">
-                        {billedByQuarter.map(([label, amount]) => (
-                          <li key={label}>
-                            <div>
-                              <strong>{label}</strong>
-                              <div className="muted">€{amount.toFixed(2)}</div>
-                            </div>
-                          </li>
-                        ))}
+                        {billedByQuarter
+                          .filter(([label]) =>
+                            kpiHorizon === "quarterly"
+                              ? label === kpiPeriod
+                              : label.startsWith(`${kpiPeriod}-`),
+                          )
+                          .map(([label, amount]) => (
+                            <li key={label}>
+                              <div>
+                                <strong>{label}</strong>
+                                <div className="muted">€{amount.toFixed(2)}</div>
+                              </div>
+                            </li>
+                          ))}
                       </ul>
-                    )}
+                    ) : null}
                     <p className="status">
-                      {t("finance.billedAnnual", { eur: billedAnnual.toFixed(2) })}
+                      {t("finance.billedPeriod", {
+                        period: kpiPeriod,
+                        eur: billedPeriod.toFixed(2),
+                      })}
                     </p>
                     <p className="status">
-                      {t("finance.receivedTotal", { eur: receivedTotal.toFixed(2) })}
+                      {t("finance.receivedPeriod", {
+                        period: kpiPeriod,
+                        eur: receivedPeriod.toFixed(2),
+                      })}
                     </p>
                     <h3>{t("finance.costOverviewTitle")}</h3>
-                    <p className="status">{t("finance.costOverviewIntro")}</p>
+                    <p className="status">{t("finance.costOverviewIntroPeriod")}</p>
                     <p className="status">
                       {t("finance.approvedHoursLine", { hours: approvedBillableHours })}
                     </p>
@@ -3679,6 +4058,12 @@ export default function App() {
                     </p>
                     <p className="status">
                       {t("finance.nonPersonnelCostTotal", { eur: nonPersonnelCostTotal.toFixed(2) })}
+                    </p>
+                    <p className="muted">
+                      {t("finance.nonPersonnelPeriodHint", {
+                        months: kpiMonths.length,
+                        period: kpiPeriod,
+                      })}
                     </p>
                     <p className="status">
                       {t("finance.grossProfit", { eur: grossProfit.toFixed(2) })}
@@ -3906,6 +4291,143 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
+              </section>
+            ) : null}
+
+            {activeView === "planning" && isManager ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("planning.title")}</h1>
+                    <p>{t("planning.intro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        goToView("resources");
+                        setPlanningCalendar(true);
+                      }}
+                    >
+                      {t("agenda.planBlock")}
+                    </button>
+                    <button type="button" className="primary" onClick={() => goToView("projects")}>
+                      {t("agenda.planKickoff")}
+                    </button>
+                  </div>
+                </div>
+                <p className="status">{t("planning.autoResolveHint")}</p>
+                {timeError ? <p className="status error">{timeError}</p> : null}
+                <div className="actions week-actions">
+                  <button type="button" onClick={() => setResourceCalendarWeek((w) => addDays(w, -7))}>
+                    {t("time.prevWeek")}
+                  </button>
+                  <button type="button" onClick={() => setResourceCalendarWeek(startOfIsoWeek(new Date()))}>
+                    {t("time.thisWeek")}
+                  </button>
+                  <button type="button" onClick={() => setResourceCalendarWeek((w) => addDays(w, 7))}>
+                    {t("time.nextWeek")}
+                  </button>
+                </div>
+                <p className="week-range">{formatWeekRange(resourceCalendarWeek, i18n.language)}</p>
+                <label htmlFor="planningResourceFilter">{t("agenda.filterResource")}</label>
+                <select
+                  id="planningResourceFilter"
+                  value={agendaResourceId}
+                  onChange={(e) => setAgendaResourceId(e.target.value)}
+                >
+                  <option value="">{t("agenda.allResources")}</option>
+                  {resources
+                    .filter((r) => r.active)
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.display_name}
+                      </option>
+                    ))}
+                </select>
+                <div className="timesheet-scroll">
+                  <table className="timesheet-grid agenda-grid">
+                    <thead>
+                      <tr>
+                        <th scope="col">{t("agenda.resource")}</th>
+                        {DAY_KEYS.map((day, i) => (
+                          <th key={day} scope="col">
+                            <span className="day-name">{t(`time.days.${day}`)}</span>
+                            <span className="day-date">{resourceAgendaDates[i].slice(8)}</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agendaResources.length === 0 ? (
+                        <tr>
+                          <td colSpan={8}>
+                            <p className="status">{t("resources.empty")}</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        agendaResources.map((r) => (
+                          <tr key={r.id}>
+                            <th scope="row">
+                              <span className="row-label">{r.display_name}</span>
+                            </th>
+                            {resourceAgendaDates.map((date) => {
+                              const dayItems = resourceWeekBlocks.filter(
+                                (a) =>
+                                  a.consultant_rate_id === r.id &&
+                                  a.starts_at.slice(0, 10) === date,
+                              );
+                              return (
+                                <td key={date}>
+                                  {dayItems.length === 0 ? (
+                                    <span className="muted">—</span>
+                                  ) : (
+                                    <ul className="agenda-day-list">
+                                      {dayItems.map((item) => (
+                                        <li key={item.id}>
+                                          <strong>
+                                            {item.kind === "kickoff"
+                                              ? t("agenda.kind.kickoff")
+                                              : t("agenda.kind.unavailable")}
+                                          </strong>
+                                          <div className="muted">
+                                            {new Date(item.starts_at).toLocaleTimeString([], {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                            {"–"}
+                                            {new Date(item.ends_at).toLocaleTimeString([], {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                          </div>
+                                          {item.customer_name ? (
+                                            <div className="muted">{item.customer_name}</div>
+                                          ) : null}
+                                          {item.project_name ? (
+                                            <div className="muted">{item.project_name}</div>
+                                          ) : null}
+                                          {item.kind !== "kickoff" ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void cancelCalendarBlock(item.id)}
+                                            >
+                                              {t("agenda.cancelBlock")}
+                                            </button>
+                                          ) : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             ) : null}
 
@@ -4505,6 +5027,9 @@ export default function App() {
                       const stage = project.funnel_status || "ordered";
                       const next = project.next_funnel || [];
                       const canPlanKickoff = next.includes("kickoff_planned");
+                      const hoursBookable =
+                        stage === "in_delivery" && (project.progress || "none") !== "complete";
+                      const canReopenDelivery = next.includes("in_delivery") && stage === "finalizing";
                       return (
                       <li key={project.id}>
                         <div>
@@ -4524,6 +5049,11 @@ export default function App() {
                               ? ` · ${t("project.kickoffAt")}: ${new Date(project.kickoff_at).toLocaleString()}`
                               : ""}
                           </div>
+                          <div className="muted">
+                            {hoursBookable
+                              ? t("project.hoursBookableYes")
+                              : t("project.hoursBookableNo")}
+                          </div>
                         </div>
                         <div className="entry-actions">
                           {canPlanKickoff ? (
@@ -4535,8 +5065,17 @@ export default function App() {
                               {t("agenda.planKickoff")}
                             </button>
                           ) : null}
+                          {canReopenDelivery ? (
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => void advanceProjectFunnel(project.id, "in_delivery")}
+                            >
+                              {t("project.reopenDelivery")}
+                            </button>
+                          ) : null}
                           {next
-                            .filter((target) => target !== "kickoff_planned")
+                            .filter((target) => target !== "kickoff_planned" && !(canReopenDelivery && target === "in_delivery"))
                             .map((target) => (
                             <button
                               key={target}
@@ -4559,6 +5098,7 @@ export default function App() {
                     <div className="customer-form">
                       <h2>{t("agenda.pickerTitle")}</h2>
                       <p className="status">{t("agenda.pickerIntro")}</p>
+                      <p className="field-hint">{t("agenda.pickerBusyHint")}</p>
                       {kickoffLoading ? <p className="status">{t("agenda.loading")}</p> : null}
                       {!kickoffLoading && kickoffSlots.length === 0 ? (
                         <p className="status">{t("agenda.noSlots")}</p>
@@ -4685,6 +5225,7 @@ export default function App() {
                         <option value="75">75%</option>
                         <option value="complete">{t("budget.progressComplete")}</option>
                       </select>
+                      <p className="field-hint">{t("budget.progressCompleteHint")}</p>
                       {budgetForm.progress === "complete" ? (
                         <>
                           <label htmlFor="reportUrl">{t("budget.reportUrl")}</label>
