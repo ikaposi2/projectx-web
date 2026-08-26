@@ -465,7 +465,11 @@
     "listTitle": "Resource list"
   },
   "project": {
-    "pageIntro": "Create projects from catalog offerings and manage configuration: assignees from Resources, reserves, and the phase dial.",
+    "pageIntro": "Running projects: phase dial, kickoff, assignees, and reserves. Closed projects are hidden here.",
+    "runningTitle": "Running projects",
+    "runningEmpty": "No running projects yet. Create one to get started.",
+    "newProject": "New project",
+    "backToRunning": "Back to running projects",
     "createTitle": "New project from catalog",
     "createIntro": "Pick a billable customer and a catalog offering. VAT, billing address, and contact details are required on the customer.",
     "customerSearch": "Search customer",

@@ -897,6 +897,7 @@ export default function App() {
   const [projectBillable, setProjectBillable] = useState<BillableCheck | null>(null);
   const [projectCreateServiceId, setProjectCreateServiceId] = useState("");
   const [projectCreateName, setProjectCreateName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
   const activeCellKey = useRef<string | null>(null);
 
   const weekDates = useMemo(
@@ -1872,6 +1873,7 @@ export default function App() {
   }
 
   function startEditProject(project: ProjectDetail) {
+    setCreatingProject(false);
     setEditingProjectId(project.id);
     setBudgetForm({
       fixed_price_eur: String(project.fixed_price_eur ?? 0),
@@ -2721,6 +2723,8 @@ export default function App() {
       setProjectCreateCustomerQuery("");
       setProjectCreateServiceId("");
       setProjectCreateName("");
+      setProjectBillable(null);
+      setCreatingProject(false);
       await Promise.all([loadManagedProjects(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -2987,8 +2991,36 @@ export default function App() {
       if (active instanceof HTMLElement) active.blur();
     }
     setAdminStatus(null);
+    if (next === "projects") {
+      setCreatingProject(false);
+    }
     setView(next);
     setNavOpen(false);
+  }
+
+  function openProjectCreate() {
+    setCreatingProject(true);
+    setEditingProjectId(null);
+    setKickoffPickerProjectId(null);
+    setKickoffSlots([]);
+    setProjectCreateCustomerId("");
+    setProjectCreateCustomerQuery("");
+    setProjectCreateCustomers([]);
+    setProjectCreateServiceId("");
+    setProjectCreateName("");
+    setProjectBillable(null);
+    setTimeError(null);
+    setAdminStatus(null);
+  }
+
+  function closeProjectCreate() {
+    setCreatingProject(false);
+    setProjectCreateCustomerId("");
+    setProjectCreateCustomerQuery("");
+    setProjectCreateCustomers([]);
+    setProjectCreateServiceId("");
+    setProjectCreateName("");
+    setProjectBillable(null);
   }
 
   function dayClass(index: number): string {
@@ -5628,81 +5660,101 @@ export default function App() {
             {activeView === "projects" && isManager ? (
               <>
                 <section className="panel wide">
-                  <h1>{t("nav.projects")}</h1>
-                  <p>{t("project.pageIntro")}</p>
+                  <div className="week-nav">
+                    <div>
+                      <h1>{creatingProject ? t("project.createTitle") : t("project.runningTitle")}</h1>
+                      <p>{creatingProject ? t("project.createIntro") : t("project.pageIntro")}</p>
+                    </div>
+                    <div className="actions">
+                      {creatingProject ? (
+                        <button type="button" onClick={() => closeProjectCreate()}>
+                          {t("project.backToRunning")}
+                        </button>
+                      ) : (
+                        <button type="button" className="primary" onClick={() => openProjectCreate()}>
+                          {t("project.newProject")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {timeError ? <p className="status error">{timeError}</p> : null}
                   {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 </section>
 
-                <section className="panel wide">
-                  <h2>{t("project.createTitle")}</h2>
-                  <p className="status">{t("project.createIntro")}</p>
-                  <label htmlFor="projectCustomerSearch">{t("project.customerSearch")}</label>
-                  <input
-                    id="projectCustomerSearch"
-                    value={projectCreateCustomerQuery}
-                    onChange={(e) => setProjectCreateCustomerQuery(e.target.value)}
-                    placeholder={t("project.customerSearchHint")}
-                  />
-                  {projectCreateCustomers.length > 0 ? (
-                    <ul className="entry-list">
-                      {projectCreateCustomers.map((c) => (
-                        <li key={c.id}>
-                          <button
-                            type="button"
-                            className={projectCreateCustomerId === c.id ? "primary" : ""}
-                            onClick={() => setProjectCreateCustomerId(c.id)}
-                          >
-                            {c.name}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {projectBillable && !projectBillable.ok ? (
-                    <p className="status error">
-                      {t("project.notBillable", { missing: projectBillable.missing.join(", ") })}
-                    </p>
-                  ) : projectBillable?.ok ? (
-                    <p className="status">{t("project.billableOk")}</p>
-                  ) : null}
-                  <label htmlFor="projectService">{t("project.catalogOffering")}</label>
-                  <select
-                    id="projectService"
-                    value={projectCreateServiceId}
-                    onChange={(e) => setProjectCreateServiceId(e.target.value)}
-                  >
-                    <option value="">{t("project.pickService")}</option>
-                    {catalogServices.map((s) => (
-                      <option key={`${s.service_id}-${s.version}`} value={s.service_id}>
-                        {(s.name.en || s.service_id) +
-                          (s.list_price_eur != null ? ` · €${s.list_price_eur}` : "")}
-                      </option>
-                    ))}
-                  </select>
-                  <label htmlFor="projectName">{t("project.nameOptional")}</label>
-                  <input
-                    id="projectName"
-                    value={projectCreateName}
-                    onChange={(e) => setProjectCreateName(e.target.value)}
-                  />
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={!projectCreateCustomerId || !projectCreateServiceId || !projectBillable?.ok}
-                      onClick={() => void createProjectFromCatalog()}
+                {creatingProject ? (
+                  <section className="panel wide">
+                    <label htmlFor="projectCustomerSearch">{t("project.customerSearch")}</label>
+                    <input
+                      id="projectCustomerSearch"
+                      value={projectCreateCustomerQuery}
+                      onChange={(e) => setProjectCreateCustomerQuery(e.target.value)}
+                      placeholder={t("project.customerSearchHint")}
+                    />
+                    {projectCreateCustomers.length > 0 ? (
+                      <ul className="entry-list">
+                        {projectCreateCustomers.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              className={projectCreateCustomerId === c.id ? "primary" : ""}
+                              onClick={() => setProjectCreateCustomerId(c.id)}
+                            >
+                              {c.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {projectBillable && !projectBillable.ok ? (
+                      <p className="status error">
+                        {t("project.notBillable", { missing: projectBillable.missing.join(", ") })}
+                      </p>
+                    ) : projectBillable?.ok ? (
+                      <p className="status">{t("project.billableOk")}</p>
+                    ) : null}
+                    <label htmlFor="projectService">{t("project.catalogOffering")}</label>
+                    <select
+                      id="projectService"
+                      value={projectCreateServiceId}
+                      onChange={(e) => setProjectCreateServiceId(e.target.value)}
                     >
-                      {t("project.create")}
-                    </button>
-                  </div>
-                </section>
-
+                      <option value="">{t("project.pickService")}</option>
+                      {catalogServices.map((s) => (
+                        <option key={`${s.service_id}-${s.version}`} value={s.service_id}>
+                          {(s.name.en || s.service_id) +
+                            (s.list_price_eur != null ? ` · €${s.list_price_eur}` : "")}
+                        </option>
+                      ))}
+                    </select>
+                    <label htmlFor="projectName">{t("project.nameOptional")}</label>
+                    <input
+                      id="projectName"
+                      value={projectCreateName}
+                      onChange={(e) => setProjectCreateName(e.target.value)}
+                    />
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={!projectCreateCustomerId || !projectCreateServiceId || !projectBillable?.ok}
+                        onClick={() => void createProjectFromCatalog()}
+                      >
+                        {t("project.create")}
+                      </button>
+                      <button type="button" onClick={() => closeProjectCreate()}>
+                        {t("customer.cancel")}
+                      </button>
+                    </div>
+                  </section>
+                ) : (
                 <section className="panel wide">
                   <h2>{t("budget.projectsTitle")}</h2>
                   <p className="status">{t("budget.projectsIntro")}</p>
+                  {openProjects.length === 0 ? (
+                    <p className="status">{t("project.runningEmpty")}</p>
+                  ) : (
                   <ul className="entry-list">
-                    {managedProjects.map((project) => {
+                    {openProjects.map((project) => {
                       const stage = normalizeDialStage(project.funnel_status);
                       const next = (project.next_funnel || []).map((s) =>
                         s === "finalizing" ? "delivered" : s,
@@ -5781,6 +5833,7 @@ export default function App() {
                       );
                     })}
                   </ul>
+                  )}
 
                   {kickoffPickerProjectId ? (
                     <div className="customer-form">
@@ -6030,6 +6083,7 @@ export default function App() {
                     </div>
                   ) : null}
                 </section>
+                )}
               </>
             ) : null}
           </main>

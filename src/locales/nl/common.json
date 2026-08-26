@@ -465,7 +465,11 @@
     "listTitle": "Resourcelijst"
   },
   "project": {
-    "pageIntro": "Maak projecten vanuit catalogusaanbod en beheer configuratie: assignees uit Resources, reserves en de fasedial.",
+    "pageIntro": "Lopende projecten: fasedial, kickoff, assignees en reserves. Gesloten projecten zie je hier niet.",
+    "runningTitle": "Lopende projecten",
+    "runningEmpty": "Nog geen lopende projecten. Maak er een aan om te starten.",
+    "newProject": "Nieuw project",
+    "backToRunning": "Terug naar lopende projecten",
     "createTitle": "Nieuw project uit catalogus",
     "createIntro": "Kies een factureerbare klant en een catalogus-aanbod. BTW, factuuradres en contactgegevens zijn verplicht op de klant.",
     "customerSearch": "Klant zoeken",
