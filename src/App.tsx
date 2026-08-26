@@ -309,6 +309,36 @@ type PersonnelCandidate = {
   invoice_number?: string | null;
 };
 
+type FinanceFunnelSnapshot = {
+  backlog_count: number;
+  backlog_value_eur: number;
+  backlog_remaining_hours: number;
+  backlog_contracted_hours: number;
+  stages: {
+    funnel_status: string;
+    count: number;
+    value_eur: number;
+    remaining_hours: number;
+    contracted_hours: number;
+  }[];
+  monthly_sold: {
+    month: string;
+    count: number;
+    value_eur: number;
+    contracted_hours: number;
+  }[];
+  projects: {
+    id: string;
+    customer_name: string;
+    name: string;
+    funnel_status: string;
+    fixed_price_eur: number;
+    remaining_hours: number;
+    contracted_hours: number;
+    created_at?: string | null;
+  }[];
+};
+
 type AppView =
   | "home"
   | "hours"
@@ -320,7 +350,7 @@ type AppView =
   | "resources"
   | "unavailable"
   | "planning";
-type FinancePanel = "operational" | "billing" | "costs" | "kpis" | null;
+type FinancePanel = "operational" | "billing" | "costs" | "kpis" | "funnel" | null;
 type KpiHorizon = "monthly" | "quarterly" | "annually";
 type NavIconName =
   | "home"
@@ -859,6 +889,7 @@ export default function App() {
   };
   const [resourceForm, setResourceForm] = useState(emptyResourceForm);
   const [personnelCandidates, setPersonnelCandidates] = useState<PersonnelCandidate[]>([]);
+  const [financeFunnel, setFinanceFunnel] = useState<FinanceFunnelSnapshot | null>(null);
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
   const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
@@ -1193,6 +1224,20 @@ export default function App() {
     }
   }, [token, costMonth]);
 
+  const loadFinanceFunnel = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${PROJECT_API}/projects/funnel/finance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setFinanceFunnel((await res.json()) as FinanceFunnelSnapshot);
+    } catch (err) {
+      setFinanceFunnel(null);
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
   const loadAllMonthlyCosts = useCallback(async () => {
     if (!token) return;
     try {
@@ -1293,6 +1338,7 @@ export default function App() {
     void loadMonthlyCosts();
     void loadAllMonthlyCosts();
     void loadPersonnelCandidates();
+    void loadFinanceFunnel();
   }, [
     token,
     user,
@@ -1304,6 +1350,7 @@ export default function App() {
     loadMonthlyCosts,
     loadAllMonthlyCosts,
     loadPersonnelCandidates,
+    loadFinanceFunnel,
     costMonth,
   ]);
 
@@ -3762,6 +3809,7 @@ export default function App() {
                   <div className="finance-hub-actions">
                     {(
                       [
+                        ["funnel", "finance.panelFunnel"],
                         ["operational", "finance.panelOperational"],
                         ["billing", "finance.panelBilling"],
                         ["costs", "finance.panelCosts"],
@@ -3779,6 +3827,126 @@ export default function App() {
                     ))}
                   </div>
                 </section>
+
+                {financePanel === "funnel" ? (
+                  <section className="panel wide">
+                    <h2>{t("finance.funnelTitle")}</h2>
+                    <p className="status">{t("finance.funnelIntro")}</p>
+                    {!financeFunnel ? (
+                      <p className="status">{t("finance.funnelEmpty")}</p>
+                    ) : (
+                      <>
+                        <div className="funnel-totals">
+                          <div>
+                            <strong>{t("finance.funnelBacklogValue")}</strong>
+                            <div className="funnel-total-value">
+                              €{financeFunnel.backlog_value_eur.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </div>
+                            <div className="muted">
+                              {t("finance.funnelBacklogCount", { count: financeFunnel.backlog_count })}
+                            </div>
+                          </div>
+                          <div>
+                            <strong>{t("finance.funnelSchedulableHours")}</strong>
+                            <div className="funnel-total-value">
+                              {financeFunnel.backlog_remaining_hours.toLocaleString(undefined, {
+                                maximumFractionDigits: 1,
+                              })}
+                              h
+                            </div>
+                            <div className="muted">
+                              {t("finance.funnelContractedHours", {
+                                hours: financeFunnel.backlog_contracted_hours.toLocaleString(undefined, {
+                                  maximumFractionDigits: 1,
+                                }),
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <h3>{t("finance.funnelStagesTitle")}</h3>
+                        <ul className="entry-list">
+                          {financeFunnel.stages.map((s) => (
+                            <li key={s.funnel_status}>
+                              <div>
+                                <strong>{t(`project.funnel.${s.funnel_status}`)}</strong>
+                                <div className="muted">
+                                  {t("finance.funnelStageLine", {
+                                    count: s.count,
+                                    eur: s.value_eur.toFixed(2),
+                                    hours: s.remaining_hours.toFixed(1),
+                                  })}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <h3>{t("finance.funnelMonthlyTitle")}</h3>
+                        <p className="status">{t("finance.funnelMonthlyIntro")}</p>
+                        {financeFunnel.monthly_sold.length === 0 ? (
+                          <p className="status">{t("finance.funnelMonthlyEmpty")}</p>
+                        ) : (
+                          <div className="funnel-bar-chart" role="img" aria-label={t("finance.funnelMonthlyTitle")}>
+                            {(() => {
+                              const max = Math.max(
+                                ...financeFunnel.monthly_sold.map((m) => m.value_eur),
+                                1,
+                              );
+                              return financeFunnel.monthly_sold.map((m) => {
+                                const pct = Math.max(4, (m.value_eur / max) * 100);
+                                return (
+                                  <div key={m.month} className="funnel-bar-col">
+                                    <div className="funnel-bar-meta muted">
+                                      €{m.value_eur.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <div className="funnel-bar-track">
+                                      <div className="funnel-bar-fill" style={{ height: `${pct}%` }} />
+                                    </div>
+                                    <div className="funnel-bar-label">{m.month.slice(2)}</div>
+                                    <div className="funnel-bar-hours muted">
+                                      {t("finance.funnelMonthHours", {
+                                        hours: m.contracted_hours.toFixed(0),
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        )}
+
+                        <h3>{t("finance.funnelProjectsTitle")}</h3>
+                        {financeFunnel.projects.length === 0 ? (
+                          <p className="status">{t("finance.funnelEmpty")}</p>
+                        ) : (
+                          <ul className="entry-list">
+                            {financeFunnel.projects.map((p) => (
+                              <li key={p.id}>
+                                <div>
+                                  <strong>
+                                    {p.customer_name} · {p.name}
+                                  </strong>
+                                  <div className="muted">
+                                    {t(`project.funnel.${normalizeDialStage(p.funnel_status)}`)} · €
+                                    {p.fixed_price_eur.toFixed(2)} ·{" "}
+                                    {t("finance.funnelProjectHours", {
+                                      remaining: p.remaining_hours.toFixed(1),
+                                      contracted: p.contracted_hours.toFixed(1),
+                                    })}
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
+                  </section>
+                ) : null}
 
                 {financePanel === "operational" ? (
                   <section className="panel wide">
