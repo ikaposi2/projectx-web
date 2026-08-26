@@ -577,6 +577,12 @@ body {
   flex-wrap: wrap;
   gap: 0.4rem;
   justify-content: flex-end;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+.entry-actions button {
+  white-space: nowrap;
 }
 
 .entry-list .muted {

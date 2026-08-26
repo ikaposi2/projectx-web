@@ -999,6 +999,8 @@ export default function App() {
   };
   const [resourceForm, setResourceForm] = useState(emptyResourceForm);
   const [personnelCandidates, setPersonnelCandidates] = useState<PersonnelCandidate[]>([]);
+  const [personnelProposals, setPersonnelProposals] = useState<FinanceInvoice[]>([]);
+  const [generatingProposalFor, setGeneratingProposalFor] = useState<string | null>(null);
   const [financeFunnel, setFinanceFunnel] = useState<FinanceFunnelSnapshot | null>(null);
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
@@ -1335,6 +1337,21 @@ export default function App() {
     }
   }, [token, costMonth]);
 
+  const loadPersonnelProposals = useCallback(async () => {
+    if (!token || !costMonth) return;
+    try {
+      const res = await fetch(
+        `${FINANCE_API}/personnel-invoices?month=${encodeURIComponent(costMonth)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setPersonnelProposals((await res.json()) as FinanceInvoice[]);
+    } catch (err) {
+      setPersonnelProposals([]);
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, costMonth]);
+
   const loadFinanceFunnel = useCallback(async () => {
     if (!token) return;
     try {
@@ -1449,6 +1466,7 @@ export default function App() {
     void loadMonthlyCosts();
     void loadAllMonthlyCosts();
     void loadPersonnelCandidates();
+    void loadPersonnelProposals();
     void loadFinanceFunnel();
   }, [
     token,
@@ -1461,6 +1479,7 @@ export default function App() {
     loadMonthlyCosts,
     loadAllMonthlyCosts,
     loadPersonnelCandidates,
+    loadPersonnelProposals,
     loadFinanceFunnel,
     costMonth,
   ]);
@@ -2464,6 +2483,7 @@ export default function App() {
     if (!token || !costMonth) return;
     setTimeError(null);
     setFinanceStatus(null);
+    setGeneratingProposalFor(partnerId);
     try {
       const res = await fetch(`${FINANCE_API}/personnel-invoices/generate`, {
         method: "POST",
@@ -2477,10 +2497,16 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
+      const created = (await res.json()) as FinanceInvoice;
       setFinanceStatus(t("finance.personnelProposalGenerated"));
-      await loadPersonnelCandidates();
+      await Promise.all([loadPersonnelCandidates(), loadPersonnelProposals()]);
+      if (created.id) {
+        await downloadInvoicePdf(created.id);
+      }
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
+    } finally {
+      setGeneratingProposalFor(null);
     }
   }
 
@@ -2490,7 +2516,10 @@ export default function App() {
       const res = await fetch(`${FINANCE_API}/invoices/${invoiceId}/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error(res.statusText);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText || "pdf_missing"));
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
@@ -4550,16 +4579,46 @@ export default function App() {
                                   type="button"
                                   onClick={() => void downloadInvoicePdf(row.invoice_id!)}
                                 >
-                                  {t("finance.downloadPdf")}
+                                  {t("finance.viewPdf")}
                                 </button>
                               ) : (
                                 <button
                                   type="button"
                                   className="primary"
+                                  disabled={generatingProposalFor === row.partner_id}
                                   onClick={() => void generatePersonnelProposal(row.partner_id)}
                                 >
-                                  {t("finance.generatePersonnelProposal")}
+                                  {generatingProposalFor === row.partner_id
+                                    ? t("finance.generatingProposal")
+                                    : t("finance.generatePersonnelProposal")}
                                 </button>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <h3>{t("finance.personnelProposalsListTitle")}</h3>
+                    {personnelProposals.length === 0 ? (
+                      <p className="status">{t("finance.personnelProposalsListEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {personnelProposals.map((inv) => (
+                          <li key={inv.id}>
+                            <div>
+                              <strong>{inv.invoice_number}</strong>
+                              <div className="muted">
+                                {inv.seller_name} · €{inv.amount_eur.toFixed(2)} · {inv.status}
+                              </div>
+                            </div>
+                            <div className="entry-actions">
+                              {inv.pdf_path ? (
+                                <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
+                                  {t("finance.viewPdf")}
+                                </button>
+                              ) : (
+                                <span className="muted">{t("finance.pdfMissing")}</span>
                               )}
                             </div>
                           </li>
