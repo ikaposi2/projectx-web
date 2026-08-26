@@ -207,6 +207,18 @@ type BillingCandidate = {
   }[];
 };
 
+type MonthlyCost = {
+  id: string;
+  label: string;
+  amount_eur: number;
+  cadence: "one_off" | "recurring";
+  start_month: string;
+  end_month: string | null;
+  notes: string | null;
+  invoice_matched: boolean;
+  invoice_paid: boolean;
+};
+
 type CompanyProfile = {
   legal_name: string;
   address_line1: string | null;
@@ -481,10 +493,15 @@ export default function App() {
     notes: "",
   });
   const [planningCalendar, setPlanningCalendar] = useState(false);
-  const [supplierInvoices, setSupplierInvoices] = useState<
-    { id: string; label: string; amount: string; matched: boolean; paid: boolean }[]
-  >([]);
-  const [otherCostForm, setOtherCostForm] = useState({ label: "", amount: "" });
+  const [monthlyCosts, setMonthlyCosts] = useState<MonthlyCost[]>([]);
+  const [otherCostForm, setOtherCostForm] = useState({
+    label: "",
+    amount: "",
+    cadence: "one_off" as "one_off" | "recurring",
+    start_month: "",
+    end_month: "",
+    notes: "",
+  });
   const [costMonth, setCostMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -770,6 +787,19 @@ export default function App() {
     }
   }, [token, financeWeekStart]);
 
+  const loadMonthlyCosts = useCallback(async () => {
+    if (!token || !costMonth) return;
+    try {
+      const res = await fetch(`${FINANCE_API}/costs?month=${encodeURIComponent(costMonth)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setMonthlyCosts((await res.json()) as MonthlyCost[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, costMonth]);
+
   const loadCatalog = useCallback(async () => {
     if (!token) return;
     try {
@@ -853,7 +883,8 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadFinance();
     void loadManagedProjects();
-  }, [token, user, view, loadFinance, financeWeekStart, loadManagedProjects]);
+    void loadMonthlyCosts();
+  }, [token, user, view, loadFinance, financeWeekStart, loadManagedProjects, loadMonthlyCosts]);
 
   useEffect(() => {
     if (!token || !user || view !== "catalog") return;
@@ -1661,6 +1692,100 @@ export default function App() {
     }
   }
 
+  async function saveMonthlyCost() {
+    if (!token) return;
+    const label = otherCostForm.label.trim();
+    const amount = Number(otherCostForm.amount);
+    const start = otherCostForm.start_month || costMonth;
+    if (!label || !Number.isFinite(amount) || amount < 0 || !start) {
+      setTimeError(t("finance.costInvalid"));
+      return;
+    }
+    setTimeError(null);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/costs`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          label,
+          amount_eur: amount,
+          cadence: otherCostForm.cadence,
+          start_month: start,
+          end_month:
+            otherCostForm.cadence === "recurring" && otherCostForm.end_month
+              ? otherCostForm.end_month
+              : null,
+          notes: otherCostForm.notes.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setOtherCostForm({
+        label: "",
+        amount: "",
+        cadence: "one_off",
+        start_month: "",
+        end_month: "",
+        notes: "",
+      });
+      setFinanceStatus(t("finance.costSaved"));
+      await loadMonthlyCosts();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function patchMonthlyCost(
+    id: string,
+    patch: Partial<Pick<MonthlyCost, "invoice_matched" | "invoice_paid">>,
+  ) {
+    if (!token) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/costs/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      await loadMonthlyCosts();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function deleteMonthlyCost(id: string, label: string) {
+    if (!token) return;
+    if (!window.confirm(t("finance.costDeleteConfirm", { label }))) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/costs/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setFinanceStatus(t("finance.costDeleted"));
+      await loadMonthlyCosts();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function downloadInvoicePdf(invoiceId: string) {
     if (!token) return;
     try {
@@ -2085,9 +2210,7 @@ export default function App() {
   const receivedTotal = invoices
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.amount_eur, 0);
-  const otherCostsTotal = supplierInvoices
-    .filter((s) => s.paid)
-    .reduce((s, row) => s + (Number(row.amount) || 0), 0);
+  const otherCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
   const grossProfit =
     invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.subtotal_eur, 0) -
     nonBillableMonthCost -
@@ -3153,8 +3276,11 @@ export default function App() {
                         ))}
                       </ul>
                     )}
-                    <h3>{t("finance.supplierInvoices")}</h3>
-                    <p className="status">{t("finance.supplierIntro")}</p>
+                    <h3>{t("finance.monthlyCostsTitle")}</h3>
+                    <p className="status">{t("finance.monthlyCostsIntro")}</p>
+                    <p className="status">
+                      {t("finance.otherCostsTotal", { eur: otherCostsTotal.toFixed(2) })}
+                    </p>
                     <div className="form-row">
                       <div>
                         <label htmlFor="supLabel">{t("finance.supplierLabel")}</label>
@@ -3176,48 +3302,85 @@ export default function App() {
                         />
                       </div>
                     </div>
+                    <label htmlFor="costCadence">{t("finance.costCadence")}</label>
+                    <select
+                      id="costCadence"
+                      value={otherCostForm.cadence}
+                      onChange={(e) =>
+                        setOtherCostForm((p) => ({
+                          ...p,
+                          cadence: e.target.value === "recurring" ? "recurring" : "one_off",
+                        }))
+                      }
+                    >
+                      <option value="one_off">{t("finance.costOneOff")}</option>
+                      <option value="recurring">{t("finance.costRecurring")}</option>
+                    </select>
+                    <div className="form-row">
+                      <div>
+                        <label htmlFor="costStart">{t("finance.costStartMonth")}</label>
+                        <input
+                          id="costStart"
+                          type="month"
+                          value={otherCostForm.start_month || costMonth}
+                          onChange={(e) =>
+                            setOtherCostForm((p) => ({ ...p, start_month: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="costEnd">{t("finance.costEndMonth")}</label>
+                        <input
+                          id="costEnd"
+                          type="month"
+                          value={otherCostForm.end_month}
+                          disabled={otherCostForm.cadence !== "recurring"}
+                          onChange={(e) =>
+                            setOtherCostForm((p) => ({ ...p, end_month: e.target.value }))
+                          }
+                        />
+                        <p className="field-hint">{t("finance.costEndHint")}</p>
+                      </div>
+                    </div>
+                    <label htmlFor="costNotes">{t("finance.costNotes")}</label>
+                    <input
+                      id="costNotes"
+                      value={otherCostForm.notes}
+                      onChange={(e) => setOtherCostForm((p) => ({ ...p, notes: e.target.value }))}
+                      maxLength={500}
+                    />
                     <div className="actions">
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={() => {
-                          if (!otherCostForm.label.trim() || !otherCostForm.amount.trim()) return;
-                          setSupplierInvoices((prev) => [
-                            ...prev,
-                            {
-                              id: crypto.randomUUID(),
-                              label: otherCostForm.label.trim(),
-                              amount: otherCostForm.amount,
-                              matched: false,
-                              paid: false,
-                            },
-                          ]);
-                          setOtherCostForm({ label: "", amount: "" });
-                        }}
-                      >
-                        {t("finance.addSupplierInvoice")}
+                      <button type="button" className="primary" onClick={() => void saveMonthlyCost()}>
+                        {t("finance.addMonthlyCost")}
                       </button>
                     </div>
-                    {supplierInvoices.length === 0 ? (
-                      <p className="status">{t("finance.supplierEmpty")}</p>
+                    {monthlyCosts.length === 0 ? (
+                      <p className="status">{t("finance.monthlyCostsEmpty")}</p>
                     ) : (
                       <ul className="entry-list">
-                        {supplierInvoices.map((row) => (
+                        {monthlyCosts.map((row) => (
                           <li key={row.id}>
                             <div>
                               <strong>
-                                {row.label} · €{Number(row.amount).toFixed(2)}
+                                {row.label} · €{row.amount_eur.toFixed(2)}
                               </strong>
+                              <div className="muted">
+                                {row.cadence === "recurring"
+                                  ? t("finance.costRecurringRange", {
+                                      start: row.start_month,
+                                      end: row.end_month || t("finance.costOngoing"),
+                                    })
+                                  : t("finance.costOneOffMonth", { month: row.start_month })}
+                                {row.notes ? ` · ${row.notes}` : ""}
+                              </div>
                               <label className="checkbox-row">
                                 <input
                                   type="checkbox"
-                                  checked={row.matched}
+                                  checked={row.invoice_matched}
                                   onChange={(e) =>
-                                    setSupplierInvoices((prev) =>
-                                      prev.map((x) =>
-                                        x.id === row.id ? { ...x, matched: e.target.checked } : x,
-                                      ),
-                                    )
+                                    void patchMonthlyCost(row.id, {
+                                      invoice_matched: e.target.checked,
+                                    })
                                   }
                                 />
                                 {t("finance.invoiceMatches")}
@@ -3225,27 +3388,23 @@ export default function App() {
                               <label className="checkbox-row">
                                 <input
                                   type="checkbox"
-                                  checked={row.paid}
+                                  checked={row.invoice_paid}
                                   onChange={(e) =>
-                                    setSupplierInvoices((prev) =>
-                                      prev.map((x) =>
-                                        x.id === row.id ? { ...x, paid: e.target.checked } : x,
-                                      ),
-                                    )
+                                    void patchMonthlyCost(row.id, {
+                                      invoice_paid: e.target.checked,
+                                    })
                                   }
                                 />
                                 {t("finance.invoicePayed")}
                               </label>
-                              {row.matched && row.paid ? (
+                              {row.invoice_matched && row.invoice_paid ? (
                                 <div className="muted">{t("finance.supplierCompleted")}</div>
                               ) : null}
                             </div>
                             <div className="entry-actions">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setSupplierInvoices((prev) => prev.filter((x) => x.id !== row.id))
-                                }
+                                onClick={() => void deleteMonthlyCost(row.id, row.label)}
                               >
                                 {t("customer.delete")}
                               </button>
