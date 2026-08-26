@@ -2217,7 +2217,7 @@ export default function App() {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+        throw new Error(formatApiError(detail.detail, res.statusText));
       }
       setFinanceStatus(t("finance.compensationUndone"));
       await loadFinance();
