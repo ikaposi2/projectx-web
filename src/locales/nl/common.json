@@ -42,8 +42,8 @@
       "hoursHint": "Tijd boeken",
       "approve": "Uren goedkeuren",
       "approveHint": "Timesheets reviewen",
-      "close": "Project sluiten",
-      "closeHint": "Oplevering afronden",
+      "close": "Project opleveren",
+      "closeHint": "Markeer als opgeleverd",
       "bill": "Project factureren",
       "billHint": "Factuur & bewaken"
     }
