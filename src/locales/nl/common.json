@@ -23,7 +23,8 @@
     "finance": "Finance",
     "catalog": "Catalogus",
     "resources": "Resources",
-    "customers": "Klanten"
+    "customers": "Klanten",
+    "reporting": "Rapportage"
   },
   "home": {
     "title": "Zo werkt de flow",
@@ -231,12 +232,17 @@
     "funnelProjectHours": "{{remaining}}u over van {{contracted}}u",
     "operationalTitle": "Operationeel — open projecten",
     "operationalIntro": "Open projecten op de fasedial — uren boeken tijdens In oplevering; Finance neemt over vanaf Opgeleverd.",
-    "billingEmpty": "Geen projecten klaar om te factureren. Zet een project op Opgeleverd op de fasedial, of keur billable uren goed op een opgeleverd T&M-project.",
+    "billingEmpty": "Niets klaar om te factureren voor deze maand. Voor T&M: keur billable uren goed op een project In oplevering. Voor vaste prijs: In oplevering (mijlpaal boven €30k) of Opgeleverd (eindfactuur).",
     "operationalEmpty": "Geen open projecten op dit moment.",
     "projectedHours": "Nog {{hours}}u geprojecteerd tot afronding",
     "budgetBar": "Oplevering {{pct}}% · budget ~{{used}}% gebruikt",
     "billingTitle": "Klantfacturatie",
-    "billingIntro": "Maak facturen voor afgeronde vaste-prijsopdrachten, 50%-mijlpalen (opdrachten boven €30k), of ongefactureerde consultancy-uren.",
+    "billingIntro": "Maak vaste-prijs mijlpaal- (boven €30k) en afrondingsfacturen, of maandelijkse T&M-facturen voor ongefactureerde goedgekeurde uren in de gekozen maand. T&M tijdens oplevering; mijlpalen vanaf In oplevering.",
+    "billingMonth": "Factuurmaand (T&M)",
+    "billingMonthHint": "T&M-kandidaten en -facturen gebruiken goedgekeurde billable uren met werkdatum in deze maand. Vaste-prijsacties negeren de maand.",
+    "billingNotAvailable": "Die factuuractie is nu niet beschikbaar.",
+    "noHoursForMonth": "Geen ongefactureerde goedgekeurde uren voor die maand.",
+    "invalidBillingMonth": "Kies een geldige factuurmaand (JJJJ-MM).",
     "readyToBill": "Klaar om te factureren",
     "awaitingPayment": "Gefactureerd — betaling open",
     "awaitingPaymentEmpty": "Geen uitgegeven facturen die op betaling wachten.",
@@ -250,6 +256,7 @@
     "invoices": "Facturen",
     "invoicesEmpty": "Geen facturen gevonden.",
     "invoiceGenerated": "Conceptfactuur aangemaakt.",
+    "invoicePeriod": "Periode {{period}}",
     "invoiceUpdated": "Factuur bijgewerkt.",
     "invoiceParties": "Verkoper {{seller}} → Koper {{buyer}}",
     "buyerAddressMissing": "Koperadres ontbreekt — werk klantfacturatiegegevens bij.",
@@ -586,5 +593,24 @@
       "pto": "Onbeschikbaar",
       "unavailable": "Onbeschikbaar"
     }
+  },
+  "reporting": {
+    "title": "Managementrapportage",
+    "intro": "Vijf cijfers voor de geselecteerde maand: funnel, waarde in uitvoering, utilization, geleverd en ontvangen.",
+    "period": "Rapportagemaand",
+    "periodLine": "Periode {{from}} → {{to}}",
+    "loading": "Rapport laden…",
+    "inProgressTitle": "Waarde in uitvoering",
+    "inProgressDetail": "Vaste prijs resterend €{{fixed}} · T&M WIP €{{tm}} · {{count}} open projecten",
+    "utilizationTitle": "Utilization",
+    "utilizationDetail": "{{billable}}u billable / {{capacity}}u capaciteit ({{resources}} resources × {{days}} werkdagen × 8u)",
+    "deliveredTitle": "Geleverd",
+    "deliveredHint": "Netto van facturen uitgegeven in deze periode (excl. BTW).",
+    "receivedTitle": "Ontvangen",
+    "receivedHint": "Netto van facturen gemarkeerd als betaald in deze periode (excl. BTW).",
+    "funnelTitle": "Funnel",
+    "funnelIntro": "Alle engagement-fasen (niet beperkt tot de geselecteerde maand).",
+    "funnelLine": "{{count}} · €{{eur}} · {{hours}}u resterend",
+    "funnelEmpty": "Nog geen projecten in de funnel."
   }
 }

@@ -199,6 +199,7 @@ type BillingCandidate = {
   fixed_price_eur: number;
   progress: string;
   report_url?: string | null;
+  period_label?: string | null;
   actions: {
     kind: string;
     label: string;
@@ -206,6 +207,7 @@ type BillingCandidate = {
     enabled: boolean;
     hours?: number;
     rate_eur?: number;
+    period_label?: string | null;
   }[];
 };
 
@@ -346,6 +348,7 @@ type AppView =
   | "admin"
   | "customers"
   | "finance"
+  | "reporting"
   | "catalog"
   | "projects"
   | "resources"
@@ -361,6 +364,7 @@ type NavIconName =
   | "projects"
   | "planning"
   | "finance"
+  | "reporting"
   | "catalog"
   | "resources"
   | "menu"
@@ -371,6 +375,37 @@ type NavIconName =
   | "flowApprove"
   | "flowClose"
   | "flowBill";
+
+type ReportSummary = {
+  from_date: string;
+  to_date: string;
+  funnel: {
+    funnel_status: string;
+    count: number;
+    value_eur: number;
+    remaining_hours: number;
+    contracted_hours: number;
+  }[];
+  in_progress: {
+    total_eur: number;
+    fixed_remaining_eur: number;
+    tm_wip_eur: number;
+    project_count: number;
+    fixed_project_count: number;
+    tm_project_count: number;
+  };
+  utilization: {
+    billable_hours: number;
+    non_billable_hours: number;
+    capacity_hours: number;
+    utilization_pct: number;
+    resource_count: number;
+    working_days: number;
+    hours_per_day: number;
+  };
+  delivered_eur: number;
+  received_eur: number;
+};
 
 function NavIcon({ name }: { name: NavIconName }) {
   const common = {
@@ -438,6 +473,16 @@ function NavIcon({ name }: { name: NavIconName }) {
         <svg {...common}>
           <path d="M6 4h12v16H6z" />
           <path d="M9 9h6M9 13h6M9 17h4" />
+        </svg>
+      );
+    case "reporting":
+      return (
+        <svg {...common}>
+          <path d="M4 19V5" />
+          <path d="M4 19h16" />
+          <path d="M8 16V10" />
+          <path d="M12 16V7" />
+          <path d="M16 16v-4" />
         </svg>
       );
     case "catalog":
@@ -813,6 +858,17 @@ function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function monthBoundsIso(month: string): { from: string; to: string } {
+  const [ys, ms] = month.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(last).padStart(2, "0")}`,
+  };
+}
+
 /** Months covered by a KPI horizon anchored on YYYY-MM. */
 function monthsForKpiHorizon(anchorMonth: string, horizon: KpiHorizon): string[] {
   const y = Number(anchorMonth.slice(0, 4));
@@ -966,6 +1022,15 @@ export default function App() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+  const [billingMonth, setBillingMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [reportMonth, setReportMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [reportSummary, setReportSummary] = useState<ReportSummary | null>(null);
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [creatingCatalog, setCreatingCatalog] = useState(false);
@@ -1265,6 +1330,7 @@ export default function App() {
   const loadFinance = useCallback(async () => {
     if (!token) return;
     const weekStartIso = toIsoDate(financeWeekStart);
+    const monthParam = billingMonth ? `?month=${encodeURIComponent(billingMonth)}` : "";
     try {
       const [reserveRes, vatRes, compRes, invRes, candRes, companyRes, agendaRes, kickoffRes] =
         await Promise.all([
@@ -1272,7 +1338,9 @@ export default function App() {
           fetch(`${FINANCE_API}/vat`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${FINANCE_API}/compensation`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${FINANCE_API}/invoices`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${FINANCE_API}/billing/candidates`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${FINANCE_API}/billing/candidates${monthParam}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
           fetch(`${FINANCE_API}/company`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${FINANCE_API}/invoices/agenda?week_start=${weekStartIso}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -1307,7 +1375,7 @@ export default function App() {
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
-  }, [token, financeWeekStart]);
+  }, [token, financeWeekStart, billingMonth]);
 
   const loadMonthlyCosts = useCallback(async () => {
     if (!token || !costMonth) return;
@@ -1365,6 +1433,23 @@ export default function App() {
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }, [token]);
+
+  const loadReportSummary = useCallback(async () => {
+    if (!token || !reportMonth) return;
+    try {
+      const { from, to } = monthBoundsIso(reportMonth);
+      const res = await fetch(
+        `${FINANCE_API}/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setTimeError(null);
+      setReportSummary((await res.json()) as ReportSummary);
+    } catch (err) {
+      setReportSummary(null);
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, reportMonth]);
 
   const loadAllMonthlyCosts = useCallback(async () => {
     if (!token) return;
@@ -1456,6 +1541,12 @@ export default function App() {
     void loadCatalog();
     void loadResources();
   }, [token, user, view, loadManagedProjects, loadCatalog, loadResources]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "reporting") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadReportSummary();
+  }, [token, user, view, loadReportSummary, reportMonth]);
 
   useEffect(() => {
     if (!token || !user || view !== "finance") return;
@@ -1723,8 +1814,10 @@ export default function App() {
       if (detail === "invalid_staffing") return t("budget.invalidStaffing");
       if (detail === "invalid_rate") return t("budget.invalidRate");
       if (detail === "proposal_already_exists") return t("finance.personnelProposalExists");
-      if (detail === "no_hours_for_month") return t("finance.personnelNoHours");
-      if (detail === "invalid_month") return t("finance.personnelInvalidMonth");
+      if (detail === "no_hours_for_month") return t("finance.noHoursForMonth");
+      if (detail === "no_billable_hours") return t("finance.noHoursForMonth");
+      if (detail === "invalid_month") return t("finance.invalidBillingMonth");
+      if (detail === "billing_not_available") return t("finance.billingNotAvailable");
       if (detail === "already_invoiced") return t("finance.compensationInvoiced");
       if (detail === "project_closed") return t("finance.compensationProjectClosed");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
@@ -2272,17 +2365,24 @@ export default function App() {
     setTimeError(null);
     setFinanceStatus(null);
     try {
+      const body: { project_id: string; kind: string; period_label?: string } = {
+        project_id: projectId,
+        kind,
+      };
+      if (kind === "tm_hours") {
+        body.period_label = billingMonth;
+      }
       const res = await fetch(`${FINANCE_API}/invoices/generate`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ project_id: projectId, kind }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+        throw new Error(formatApiError(detail.detail, res.statusText));
       }
       setFinanceStatus(t("finance.invoiceGenerated"));
       await loadFinance();
@@ -2966,6 +3066,7 @@ export default function App() {
   const activeView: AppView =
     (view === "admin" ||
       view === "finance" ||
+      view === "reporting" ||
       view === "catalog" ||
       view === "projects" ||
       view === "resources" ||
@@ -3527,6 +3628,17 @@ export default function App() {
             {isManager ? (
               <button
                 type="button"
+                className={activeView === "reporting" ? "nav-item active" : "nav-item"}
+                onClick={() => goToView("reporting")}
+                title={t("nav.reporting")}
+              >
+                <NavIcon name="reporting" />
+                <span className="nav-label">{t("nav.reporting")}</span>
+              </button>
+            ) : null}
+            {isManager ? (
+              <button
+                type="button"
                 className={activeView === "catalog" ? "nav-item active" : "nav-item"}
                 onClick={() => goToView("catalog")}
                 title={t("nav.catalog")}
@@ -4052,6 +4164,102 @@ export default function App() {
               </section>
             ) : null}
 
+            {activeView === "reporting" && isManager ? (
+              <section className="panel wide">
+                <h1>{t("reporting.title")}</h1>
+                <p>{t("reporting.intro")}</p>
+                <label htmlFor="reportMonth">{t("reporting.period")}</label>
+                <input
+                  id="reportMonth"
+                  type="month"
+                  value={reportMonth}
+                  onChange={(e) => setReportMonth(e.target.value)}
+                />
+                {reportSummary ? (
+                  <p className="muted">
+                    {t("reporting.periodLine", {
+                      from: reportSummary.from_date,
+                      to: reportSummary.to_date,
+                    })}
+                  </p>
+                ) : null}
+                {timeError ? <p className="status error">{timeError}</p> : null}
+                {!reportSummary && !timeError ? (
+                  <p className="status">{t("reporting.loading")}</p>
+                ) : reportSummary ? (
+                  <>
+                    <div className="funnel-totals">
+                      <div>
+                        <strong>{t("reporting.inProgressTitle")}</strong>
+                        <div className="funnel-total-value">
+                          €{reportSummary.in_progress.total_eur.toFixed(0)}
+                        </div>
+                        <div className="muted">
+                          {t("reporting.inProgressDetail", {
+                            fixed: reportSummary.in_progress.fixed_remaining_eur.toFixed(0),
+                            tm: reportSummary.in_progress.tm_wip_eur.toFixed(0),
+                            count: reportSummary.in_progress.project_count,
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <strong>{t("reporting.utilizationTitle")}</strong>
+                        <div className="funnel-total-value">
+                          {reportSummary.utilization.utilization_pct.toFixed(1)}%
+                        </div>
+                        <div className="muted">
+                          {t("reporting.utilizationDetail", {
+                            billable: reportSummary.utilization.billable_hours,
+                            capacity: reportSummary.utilization.capacity_hours,
+                            resources: reportSummary.utilization.resource_count,
+                            days: reportSummary.utilization.working_days,
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <strong>{t("reporting.deliveredTitle")}</strong>
+                        <div className="funnel-total-value">
+                          €{reportSummary.delivered_eur.toFixed(0)}
+                        </div>
+                        <div className="muted">{t("reporting.deliveredHint")}</div>
+                      </div>
+                      <div>
+                        <strong>{t("reporting.receivedTitle")}</strong>
+                        <div className="funnel-total-value">
+                          €{reportSummary.received_eur.toFixed(0)}
+                        </div>
+                        <div className="muted">{t("reporting.receivedHint")}</div>
+                      </div>
+                    </div>
+
+                    <h2>{t("reporting.funnelTitle")}</h2>
+                    <p className="status">{t("reporting.funnelIntro")}</p>
+                    <ul className="entry-list">
+                      {reportSummary.funnel
+                        .filter((s) => s.count > 0)
+                        .map((s) => (
+                          <li key={s.funnel_status}>
+                            <div>
+                              <strong>{t(`project.funnel.${s.funnel_status}`)}</strong>
+                              <div className="muted">
+                                {t("reporting.funnelLine", {
+                                  count: s.count,
+                                  eur: s.value_eur.toFixed(0),
+                                  hours: s.remaining_hours,
+                                })}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                    </ul>
+                    {reportSummary.funnel.every((s) => s.count === 0) ? (
+                      <p className="status">{t("reporting.funnelEmpty")}</p>
+                    ) : null}
+                  </>
+                ) : null}
+              </section>
+            ) : null}
+
             {activeView === "finance" && isManager ? (
               <>
                 <section className="panel wide">
@@ -4280,6 +4488,14 @@ export default function App() {
                     <section className="panel wide">
                       <h2>{t("finance.billingTitle")}</h2>
                       <p>{t("finance.billingIntro")}</p>
+                      <label htmlFor="billingMonth">{t("finance.billingMonth")}</label>
+                      <input
+                        id="billingMonth"
+                        type="month"
+                        value={billingMonth}
+                        onChange={(e) => setBillingMonth(e.target.value)}
+                      />
+                      <p className="muted">{t("finance.billingMonthHint")}</p>
                       <h3>{t("finance.readyToBill")}</h3>
                       {billingCandidates.length === 0 ? (
                         <p className="status">{t("finance.billingEmpty")}</p>
@@ -4397,6 +4613,9 @@ export default function App() {
                                   {inv.project_name} ·{" "}
                                   {t(`finance.kind.${inv.kind}`, { defaultValue: inv.kind })} ·{" "}
                                   {t(`finance.status.${inv.status}`, { defaultValue: inv.status })}
+                                  {inv.period_label
+                                    ? ` · ${t("finance.invoicePeriod", { period: inv.period_label })}`
+                                    : ""}
                                 </div>
                                 <div className="muted">
                                   {t("finance.vatLine", {

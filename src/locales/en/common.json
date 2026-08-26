@@ -23,7 +23,8 @@
     "finance": "Finance",
     "catalog": "Catalog",
     "resources": "Resources",
-    "customers": "Customers"
+    "customers": "Customers",
+    "reporting": "Reporting"
   },
   "home": {
     "title": "How work flows",
@@ -235,7 +236,7 @@
     "projectedHours": "{{hours}}h still projected before close",
     "budgetBar": "Delivery {{pct}}% · budget used ~{{used}}%",
     "billingTitle": "Customer billing",
-    "billingIntro": "Generate fixed-price completion invoices, or monthly T&M invoices for unbilled approved hours in the selected month. T&M projects can be billed while still in delivery.",
+    "billingIntro": "Generate fixed-price milestone (above €30k) and completion invoices, or monthly T&M invoices for unbilled approved hours in the selected month. T&M can be billed while still in delivery; milestones from In delivery.",
     "billingMonth": "Billing month (T&M)",
     "billingMonthHint": "T&M candidates and invoices use approved billable hours with work dates in this month. Fixed-price actions ignore the month.",
     "readyToBill": "Ready to bill",
@@ -246,7 +247,7 @@
     "searchCustomerHint": "Customer name…",
     "searchDate": "Issue date",
     "searchId": "Invoice number / id",
-    "billingEmpty": "Nothing ready to invoice for this month. For T&M: approve billable hours on an in-delivery project. For fixed price: mark the project Delivered.",
+    "billingEmpty": "Nothing ready to invoice for this month. For T&M: approve billable hours on an in-delivery project. For fixed price: use In delivery (milestone if above €30k) or Delivered (final).",
     "billingNotAvailable": "That invoice action is not available right now.",
     "noHoursForMonth": "No unbilled approved hours for that month.",
     "invalidBillingMonth": "Choose a valid billing month (YYYY-MM).",
@@ -592,5 +593,24 @@
       "pto": "Unavailable",
       "unavailable": "Unavailable"
     }
+  },
+  "reporting": {
+    "title": "Management reporting",
+    "intro": "Five figures for the selected month: funnel, in-progress value, utilization, delivered, and received.",
+    "period": "Report month",
+    "periodLine": "Period {{from}} → {{to}}",
+    "loading": "Loading report…",
+    "inProgressTitle": "In-progress value",
+    "inProgressDetail": "Fixed remaining €{{fixed}} · T&M WIP €{{tm}} · {{count}} open projects",
+    "utilizationTitle": "Utilization",
+    "utilizationDetail": "{{billable}}h billable / {{capacity}}h capacity ({{resources}} resources × {{days}} working days × 8h)",
+    "deliveredTitle": "Delivered",
+    "deliveredHint": "Net of invoices issued in this period (ex VAT).",
+    "receivedTitle": "Received",
+    "receivedHint": "Net of invoices marked paid in this period (ex VAT).",
+    "funnelTitle": "Funnel",
+    "funnelIntro": "All engagement stages (not limited to the selected month).",
+    "funnelLine": "{{count}} · €{{eur}} · {{hours}}h remaining",
+    "funnelEmpty": "No projects in the funnel yet."
   }
 }

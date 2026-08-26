@@ -12,11 +12,15 @@ React + TypeScript + Vite SPA for Project X.
 |------|---------|
 | Hour reporting | Weekly timesheet |
 | Hour administration | Approve / refuse pending hours |
-| Projects | Create from catalog, manage budgets & staffing |
-| Finance | Invoices, reserve, VAT, compensation |
+| Projects | Create from catalog, funnel dial, budgets & staffing, kickoff planner |
+| Planning | Resource calendar / unavailable blocks; project agenda |
+| Finance | Funnel panel, operational, billing (month-scoped T&M + milestone/final), costs, KPIs |
+| Reporting | Month picker — funnel, WIP, utilization, delivered, received |
 | Catalog | Fixed-price offerings (CRUD) |
 | Resources | Internal/external consultants (senior, partner, rates) |
-| Customers | Customer records, billing fields |
+| Customers | Customer records, billing fields, MSP bill-to |
+
+Product flows: [delivery-lifecycle.md](../projectX-docs/docs/architecture/delivery-lifecycle.md).
 
 ## Run
 
