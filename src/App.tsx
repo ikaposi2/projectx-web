@@ -284,6 +284,7 @@ type Resource = {
   is_senior: boolean;
   is_partner: boolean;
   active: boolean;
+  company_name?: string | null;
   address_line1?: string | null;
   address_line2?: string | null;
   postal_code?: string | null;
@@ -889,6 +890,7 @@ export default function App() {
     internal_rate_eur: "75",
     is_senior: false,
     is_partner: false,
+    company_name: "",
     address_line1: "",
     address_line2: "",
     postal_code: "",
@@ -2528,6 +2530,7 @@ export default function App() {
       internal_rate_eur: String(r.internal_rate_eur),
       is_senior: r.is_senior,
       is_partner: r.is_partner,
+      company_name: r.company_name || "",
       address_line1: r.address_line1 || "",
       address_line2: r.address_line2 || "",
       postal_code: r.postal_code || "",
@@ -2576,6 +2579,7 @@ export default function App() {
       is_senior: resourceForm.is_senior,
       is_partner: resourceForm.is_partner,
       active: true,
+      company_name: resourceForm.company_name.trim() || null,
       address_line1: resourceForm.address_line1.trim() || null,
       address_line2: resourceForm.address_line2.trim() || null,
       postal_code: resourceForm.postal_code.trim() || null,
@@ -5418,6 +5422,12 @@ export default function App() {
                       <>
                         <h3>{t("resources.billingTitle")}</h3>
                         <p className="field-hint">{t("resources.billingHint")}</p>
+                        <label htmlFor="resCompany">{t("resources.companyName")}</label>
+                        <input
+                          id="resCompany"
+                          value={resourceForm.company_name}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, company_name: e.target.value }))}
+                        />
                         <label htmlFor="resAddr1">{t("resources.addressLine1")}</label>
                         <input
                           id="resAddr1"
@@ -5507,11 +5517,23 @@ export default function App() {
                           <div>
                             <strong>{r.display_name}</strong>
                             <div className="muted">
+                              {r.company_name ? `${r.company_name} · ` : ""}
                               {t(`resources.kind.${r.kind}`)} · {t("resources.billableRate")} €
                               {r.billable_rate_eur} · {t("resources.internalRate")} €{r.internal_rate_eur}
                               {r.is_senior ? ` · ${t("resources.seniorBadge")}` : ""}
                               {r.is_partner ? ` · ${t("resources.partnerBadge")}` : ""}
                             </div>
+                            {r.kind === "external" && (r.vat_id || r.bank_account || r.address_line1) ? (
+                              <div className="muted">
+                                {[
+                                  r.vat_id ? `${t("resources.vatId")}: ${r.vat_id}` : null,
+                                  r.bank_account ? `${t("resources.bankAccount")}: ${r.bank_account}` : null,
+                                  [r.address_line1, r.postal_code, r.city].filter(Boolean).join(", ") || null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="entry-actions">
                             <button type="button" onClick={() => openUnavailablePage(r.id)}>
