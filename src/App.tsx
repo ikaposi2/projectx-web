@@ -424,6 +424,91 @@ function NavIcon({ name }: { name: NavIconName }) {
   }
 }
 
+const PROJECT_DIAL_STAGES = [
+  "ordered",
+  "kickoff_planned",
+  "validated",
+  "in_delivery",
+  "delivered",
+  "invoiced",
+  "closed",
+] as const;
+
+function normalizeDialStage(status: string | null | undefined): (typeof PROJECT_DIAL_STAGES)[number] {
+  const raw = (status || "ordered").trim();
+  if (raw === "finalizing") return "delivered";
+  if (raw === "registered") return "ordered";
+  if (raw === "paid") return "closed";
+  if ((PROJECT_DIAL_STAGES as readonly string[]).includes(raw)) {
+    return raw as (typeof PROJECT_DIAL_STAGES)[number];
+  }
+  return "ordered";
+}
+
+function ProjectPhaseDial({
+  stage,
+  label,
+}: {
+  stage: string | null | undefined;
+  label: (key: string) => string;
+}) {
+  const current = normalizeDialStage(stage);
+  const idx = PROJECT_DIAL_STAGES.indexOf(current);
+  const n = PROJECT_DIAL_STAGES.length;
+  const cx = 110;
+  const cy = 110;
+  const r = 78;
+  const startAngle = Math.PI * 0.75; // lower-left
+  const endAngle = Math.PI * 2.25; // lower-right (sweep 270°)
+  const sweep = endAngle - startAngle;
+  const angleAt = (i: number) => startAngle + (sweep * i) / (n - 1);
+  const pt = (ang: number, radius: number) => ({
+    x: cx + Math.cos(ang) * radius,
+    y: cy + Math.sin(ang) * radius,
+  });
+  const arcPath = (from: number, to: number) => {
+    const a0 = angleAt(from);
+    const a1 = angleAt(to);
+    const p0 = pt(a0, r);
+    const p1 = pt(a1, r);
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    return `M ${p0.x} ${p0.y} A ${r} ${r} 0 ${large} 1 ${p1.x} ${p1.y}`;
+  };
+  const needle = pt(angleAt(Math.max(0, idx)), r - 18);
+  const knob = pt(angleAt(Math.max(0, idx)), r);
+
+  return (
+    <div className="phase-dial" aria-label={label(`project.funnel.${current}`)}>
+      <svg className="phase-dial-svg" viewBox="0 0 220 200" role="img">
+        <path className="phase-dial-arc" d={arcPath(0, n - 1)} />
+        {idx > 0 ? <path className="phase-dial-progress" d={arcPath(0, idx)} /> : null}
+        {PROJECT_DIAL_STAGES.map((s, i) => {
+          const p = pt(angleAt(i), r);
+          const cls =
+            i < idx ? "phase-dial-tick done" : i === idx ? "phase-dial-tick active" : "phase-dial-tick";
+          return <circle key={s} className={cls} cx={p.x} cy={p.y} r={i === idx ? 5.5 : 3.5} />;
+        })}
+        <line className="phase-dial-needle" x1={cx} y1={cy} x2={needle.x} y2={needle.y} />
+        <circle cx={cx} cy={cy} r={6} fill="var(--brand-primary)" />
+        <circle className="phase-dial-knob" cx={knob.x} cy={knob.y} r={8} />
+      </svg>
+      <p className="phase-dial-label">{label(`project.funnel.${current}`)}</p>
+      <div className="phase-dial-track">
+        {PROJECT_DIAL_STAGES.map((s, i) => (
+          <span
+            key={s}
+            className={
+              i < idx ? "phase-dial-chip done" : i === idx ? "phase-dial-chip active" : "phase-dial-chip"
+            }
+          >
+            {label(`project.funnel.${s}`)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const UNAVAIL_SLOTS: { id: UnavailSlot; labelKey: string; startHour: number }[] = [
   { id: "am", labelKey: "agenda.slotAm", startHour: 9 },
   { id: "pm", labelKey: "agenda.slotPm", startHour: 13 },
@@ -1646,8 +1731,6 @@ export default function App() {
           overhead_mode: budgetForm.overhead_mode,
           overhead_rate: Number(budgetForm.overhead_rate) || 0,
           overhead_fixed_eur: Number(budgetForm.overhead_fixed_eur) || 0,
-          progress: budgetForm.progress,
-          report_url: budgetForm.progress === "complete" ? budgetForm.report_url.trim() || null : null,
           kickoff_at: fromDateTimeLocalValue(budgetForm.kickoff_at),
           staffing: staffingDraft.map((s) => ({
             consultant_rate_id: s.consultant_rate_id,
@@ -1853,7 +1936,7 @@ export default function App() {
         throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
       }
       setFinanceStatus(t("finance.invoiceUpdated"));
-      await loadFinance();
+      await Promise.all([loadFinance(), loadManagedProjects(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -2382,9 +2465,7 @@ export default function App() {
     .filter((r) => r.active)
     .filter((r) => !agendaResourceId || r.id === agendaResourceId);
   const openProjects = managedProjects.filter(
-    (p) =>
-      (p.progress || "none") !== "complete" &&
-      !["paid", "closed"].includes(p.funnel_status || ""),
+    (p) => !["paid", "closed"].includes(normalizeDialStage(p.funnel_status)),
   );
   const unpaidInvoices = invoices.filter((inv) => inv.status === "issued");
   const filteredInvoices = invoices.filter((inv) => {
@@ -3431,12 +3512,12 @@ export default function App() {
                     ) : (
                       <ul className="entry-list">
                         {openProjects.map((p) => {
-                          const progressPct =
-                            p.progress === "complete"
-                              ? 100
-                              : p.progress === "none"
-                                ? 0
-                                : Number(p.progress) || 0;
+                          const dial = normalizeDialStage(p.funnel_status);
+                          const dialIdx = PROJECT_DIAL_STAGES.indexOf(dial);
+                          const dialPct =
+                            PROJECT_DIAL_STAGES.length > 1
+                              ? (Math.max(0, dialIdx) / (PROJECT_DIAL_STAGES.length - 1)) * 100
+                              : 0;
                           const budgetUsed =
                             p.fixed_price_eur > 0
                               ? Math.min(
@@ -3460,9 +3541,11 @@ export default function App() {
                                   {p.customer_name} · {p.name}
                                 </strong>
                                 <div className="muted">
-                                  {t(`project.funnel.${p.funnel_status || "registered"}`)} ·{" "}
-                                  {t(`finance.progress.${p.progress || "none"}`)} ·{" "}
+                                  {t(`project.funnel.${dial}`)} ·{" "}
                                   {t("finance.projectedHours", { hours: p.remaining_hours })}
+                                </div>
+                                <div className="bar-track" aria-hidden title={t(`project.funnel.${dial}`)}>
+                                  <div className="bar-fill" style={{ width: `${dialPct}%` }} />
                                 </div>
                                 <div className="bar-track" aria-hidden>
                                   <div
@@ -3472,7 +3555,7 @@ export default function App() {
                                 </div>
                                 <div className="muted">
                                   {t("finance.budgetBar", {
-                                    pct: Math.round(progressPct),
+                                    pct: Math.round(dialPct),
                                     used: Math.round(budgetUsed),
                                   })}
                                 </div>
@@ -3502,7 +3585,7 @@ export default function App() {
                                   {c.customer_name} · {c.project_name}
                                 </strong>
                                 <div className="muted">
-                                  €{c.fixed_price_eur} · {t(`finance.progress.${c.progress}`)}
+                                  €{c.fixed_price_eur} · {t(`project.funnel.${normalizeDialStage(c.progress)}`)}
                                   {c.report_url ? (
                                     <>
                                       {" · "}
@@ -5024,70 +5107,79 @@ export default function App() {
                   <p className="status">{t("budget.projectsIntro")}</p>
                   <ul className="entry-list">
                     {managedProjects.map((project) => {
-                      const stage = project.funnel_status || "ordered";
-                      const next = project.next_funnel || [];
+                      const stage = normalizeDialStage(project.funnel_status);
+                      const next = (project.next_funnel || []).map((s) =>
+                        s === "finalizing" ? "delivered" : s,
+                      );
                       const canPlanKickoff = next.includes("kickoff_planned");
-                      const hoursBookable =
-                        stage === "in_delivery" && (project.progress || "none") !== "complete";
-                      const canReopenDelivery = next.includes("in_delivery") && stage === "finalizing";
+                      const hoursBookable = stage === "in_delivery";
+                      const canReopenDelivery = next.includes("in_delivery") && stage === "delivered";
                       return (
                       <li key={project.id}>
-                        <div>
-                          <strong>
-                            {project.customer_name} · {project.name}
-                          </strong>
-                          <div className="muted">
-                            {t(`project.funnel.${stage}`)}
-                            {" · "}
-                            {project.engagement_type === "tm"
-                              ? t("project.engagementTm")
-                              : t("project.engagementFixed")}
-                            {" · "}
-                            €{project.fixed_price_eur} → €{project.consultancy_budget_eur} ·{" "}
-                            {project.contracted_hours}h ({t("time.remaining", { hours: project.remaining_hours })})
-                            {project.kickoff_at
-                              ? ` · ${t("project.kickoffAt")}: ${new Date(project.kickoff_at).toLocaleString()}`
-                              : ""}
+                        <div className="project-list-item">
+                          <div>
+                            <strong>
+                              {project.customer_name} · {project.name}
+                            </strong>
+                            <div className="muted">
+                              {project.engagement_type === "tm"
+                                ? t("project.engagementTm")
+                                : t("project.engagementFixed")}
+                              {" · "}
+                              €{project.fixed_price_eur} → €{project.consultancy_budget_eur} ·{" "}
+                              {project.contracted_hours}h ({t("time.remaining", { hours: project.remaining_hours })})
+                              {project.kickoff_at
+                                ? ` · ${t("project.kickoffAt")}: ${new Date(project.kickoff_at).toLocaleString()}`
+                                : ""}
+                            </div>
+                            <div className="muted">
+                              {hoursBookable
+                                ? t("project.hoursBookableYes")
+                                : t("project.hoursBookableNo")}
+                            </div>
+                            <div className="entry-actions" style={{ marginTop: "0.65rem" }}>
+                              {canPlanKickoff ? (
+                                <button
+                                  type="button"
+                                  className="primary"
+                                  onClick={() => void openKickoffPicker(project)}
+                                >
+                                  {t("agenda.planKickoff")}
+                                </button>
+                              ) : null}
+                              {canReopenDelivery ? (
+                                <button
+                                  type="button"
+                                  className="primary"
+                                  onClick={() => void advanceProjectFunnel(project.id, "in_delivery")}
+                                >
+                                  {t("project.reopenDelivery")}
+                                </button>
+                              ) : null}
+                              {next
+                                .filter(
+                                  (target) =>
+                                    target !== "kickoff_planned" &&
+                                    !(canReopenDelivery && target === "in_delivery") &&
+                                    target !== "invoiced" &&
+                                    target !== "paid" &&
+                                    target !== "closed",
+                                )
+                                .map((target) => (
+                                <button
+                                  key={target}
+                                  type="button"
+                                  onClick={() => void advanceProjectFunnel(project.id, target)}
+                                >
+                                  {t("project.advanceTo", { stage: t(`project.funnel.${target}`) })}
+                                </button>
+                              ))}
+                              <button type="button" onClick={() => startEditProject(project)}>
+                                {t("budget.edit")}
+                              </button>
+                            </div>
                           </div>
-                          <div className="muted">
-                            {hoursBookable
-                              ? t("project.hoursBookableYes")
-                              : t("project.hoursBookableNo")}
-                          </div>
-                        </div>
-                        <div className="entry-actions">
-                          {canPlanKickoff ? (
-                            <button
-                              type="button"
-                              className="primary"
-                              onClick={() => void openKickoffPicker(project)}
-                            >
-                              {t("agenda.planKickoff")}
-                            </button>
-                          ) : null}
-                          {canReopenDelivery ? (
-                            <button
-                              type="button"
-                              className="primary"
-                              onClick={() => void advanceProjectFunnel(project.id, "in_delivery")}
-                            >
-                              {t("project.reopenDelivery")}
-                            </button>
-                          ) : null}
-                          {next
-                            .filter((target) => target !== "kickoff_planned" && !(canReopenDelivery && target === "in_delivery"))
-                            .map((target) => (
-                            <button
-                              key={target}
-                              type="button"
-                              onClick={() => void advanceProjectFunnel(project.id, target)}
-                            >
-                              {t("project.advanceTo", { stage: t(`project.funnel.${target}`) })}
-                            </button>
-                          ))}
-                          <button type="button" onClick={() => startEditProject(project)}>
-                            {t("budget.edit")}
-                          </button>
+                          <ProjectPhaseDial stage={stage} label={(key) => t(key)} />
                         </div>
                       </li>
                       );
@@ -5204,7 +5296,6 @@ export default function App() {
                         </fieldset>
                       ))}
 
-                      <h3>{t("budget.progress")}</h3>
                       <label htmlFor="projectKickoff">{t("project.kickoffAt")}</label>
                       <input
                         id="projectKickoff"
@@ -5213,32 +5304,6 @@ export default function App() {
                         onChange={(e) => setBudgetForm((p) => ({ ...p, kickoff_at: e.target.value }))}
                       />
                       <p className="field-hint">{t("project.kickoffHint")}</p>
-                      <label htmlFor="projectProgress">{t("budget.progressLabel")}</label>
-                      <select
-                        id="projectProgress"
-                        value={budgetForm.progress}
-                        onChange={(e) => setBudgetForm((p) => ({ ...p, progress: e.target.value }))}
-                      >
-                        <option value="none">{t("budget.progressNone")}</option>
-                        <option value="25">25%</option>
-                        <option value="50">50%</option>
-                        <option value="75">75%</option>
-                        <option value="complete">{t("budget.progressComplete")}</option>
-                      </select>
-                      <p className="field-hint">{t("budget.progressCompleteHint")}</p>
-                      {budgetForm.progress === "complete" ? (
-                        <>
-                          <label htmlFor="reportUrl">{t("budget.reportUrl")}</label>
-                          <input
-                            id="reportUrl"
-                            type="url"
-                            value={budgetForm.report_url}
-                            onChange={(e) => setBudgetForm((p) => ({ ...p, report_url: e.target.value }))}
-                            placeholder="https://"
-                          />
-                          <p className="field-hint">{t("budget.reportHint")}</p>
-                        </>
-                      ) : null}
 
                       <h3>{t("budget.staffing")}</h3>
                       <p className="status">{t("budget.staffingHint")}</p>
