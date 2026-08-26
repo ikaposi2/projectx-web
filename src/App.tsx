@@ -696,6 +696,17 @@ function toDateTimeLocalValue(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Split `YYYY-MM-DDTHH:mm` into date + time parts for separate inputs. */
+function splitDateTimeLocal(value: string): { date: string; time: string } {
+  const [date = "", rest = ""] = value.split("T");
+  return { date, time: rest.slice(0, 5) || "09:00" };
+}
+
+function joinDateTimeLocal(date: string, time: string): string {
+  if (!date.trim()) return "";
+  return `${date.trim()}T${(time.trim() || "00:00").slice(0, 5)}`;
+}
+
 /** ISO string from datetime-local, or null if empty. */
 function fromDateTimeLocalValue(local: string): string | null {
   const v = local.trim();
@@ -5124,6 +5135,59 @@ export default function App() {
                 {adminStatus ? <p className="status">{adminStatus}</p> : null}
                 {timeError ? <p className="status error">{timeError}</p> : null}
                 <div className="customer-form">
+                  <label htmlFor="calStartsDate">{t("agenda.startsAt")}</label>
+                  <input
+                    id="calStartsDate"
+                    type="date"
+                    value={splitDateTimeLocal(calendarForm.starts_at).date}
+                    onChange={(e) => {
+                      const { time } = splitDateTimeLocal(calendarForm.starts_at);
+                      setCalendarForm((p) => ({
+                        ...p,
+                        starts_at: joinDateTimeLocal(e.target.value, time),
+                      }));
+                    }}
+                  />
+                  <label htmlFor="calStartsTime">{t("agenda.startsTime")}</label>
+                  <input
+                    id="calStartsTime"
+                    type="time"
+                    value={splitDateTimeLocal(calendarForm.starts_at).time}
+                    onChange={(e) => {
+                      const { date } = splitDateTimeLocal(calendarForm.starts_at);
+                      setCalendarForm((p) => ({
+                        ...p,
+                        starts_at: joinDateTimeLocal(date, e.target.value),
+                      }));
+                    }}
+                  />
+                  <label htmlFor="calEndsDate">{t("agenda.endsAt")}</label>
+                  <input
+                    id="calEndsDate"
+                    type="date"
+                    value={splitDateTimeLocal(calendarForm.ends_at).date}
+                    onChange={(e) => {
+                      const { time } = splitDateTimeLocal(calendarForm.ends_at);
+                      setCalendarForm((p) => ({
+                        ...p,
+                        ends_at: joinDateTimeLocal(e.target.value, time),
+                      }));
+                    }}
+                  />
+                  <label htmlFor="calEndsTime">{t("agenda.endsTime")}</label>
+                  <input
+                    id="calEndsTime"
+                    type="time"
+                    value={splitDateTimeLocal(calendarForm.ends_at).time}
+                    onChange={(e) => {
+                      const { date } = splitDateTimeLocal(calendarForm.ends_at);
+                      setCalendarForm((p) => ({
+                        ...p,
+                        ends_at: joinDateTimeLocal(date, e.target.value),
+                      }));
+                    }}
+                  />
+                  <p className="field-hint">{t("agenda.rangeHint")}</p>
                   <label htmlFor="calResource">{t("agenda.resource")}</label>
                   <select
                     id="calResource"
@@ -5141,21 +5205,6 @@ export default function App() {
                         </option>
                       ))}
                   </select>
-                  <label htmlFor="calStarts">{t("agenda.startsAt")}</label>
-                  <input
-                    id="calStarts"
-                    type="datetime-local"
-                    value={calendarForm.starts_at}
-                    onChange={(e) => setCalendarForm((p) => ({ ...p, starts_at: e.target.value }))}
-                  />
-                  <label htmlFor="calEnds">{t("agenda.endsAt")}</label>
-                  <input
-                    id="calEnds"
-                    type="datetime-local"
-                    value={calendarForm.ends_at}
-                    onChange={(e) => setCalendarForm((p) => ({ ...p, ends_at: e.target.value }))}
-                  />
-                  <p className="field-hint">{t("agenda.rangeHint")}</p>
                   <label htmlFor="calNotes">{t("agenda.notes")}</label>
                   <input
                     id="calNotes"
