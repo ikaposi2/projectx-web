@@ -280,7 +280,6 @@ type Resource = {
   display_name: string;
   billable_rate_eur: number;
   kind: "internal" | "external";
-  internal_rate_eur: number;
   is_senior: boolean;
   is_partner: boolean;
   active: boolean;
@@ -887,7 +886,6 @@ export default function App() {
     display_name: "",
     kind: "external" as "internal" | "external",
     billable_rate_eur: "150",
-    internal_rate_eur: "75",
     is_senior: false,
     is_partner: false,
     company_name: "",
@@ -2527,7 +2525,6 @@ export default function App() {
       display_name: r.display_name,
       kind: r.kind === "internal" ? "internal" : "external",
       billable_rate_eur: String(r.billable_rate_eur),
-      internal_rate_eur: String(r.internal_rate_eur),
       is_senior: r.is_senior,
       is_partner: r.is_partner,
       company_name: r.company_name || "",
@@ -2562,12 +2559,11 @@ export default function App() {
     setAdminStatus(null);
     const name = resourceForm.display_name.trim();
     const billable = Number(resourceForm.billable_rate_eur);
-    const internal = Number(resourceForm.internal_rate_eur);
     if (!name) {
       setTimeError(t("resources.missingName"));
       return;
     }
-    if (!Number.isFinite(billable) || billable <= 0 || !Number.isFinite(internal) || internal < 0) {
+    if (!Number.isFinite(billable) || billable <= 0) {
       setTimeError(t("resources.invalidRates"));
       return;
     }
@@ -2575,7 +2571,6 @@ export default function App() {
       display_name: name,
       kind: resourceForm.kind,
       billable_rate_eur: billable,
-      internal_rate_eur: internal,
       is_senior: resourceForm.is_senior,
       is_partner: resourceForm.is_partner,
       active: true,
@@ -2894,15 +2889,15 @@ export default function App() {
     }
     return resourceForPartner(partnerId, projectId)?.billable_rate_eur || 0;
   };
-  const actualInternalRate = (partnerId: string, projectId: string | null | undefined) =>
-    resourceForPartner(partnerId, projectId)?.internal_rate_eur || 0;
+  const actualResourceRate = (partnerId: string, projectId: string | null | undefined) =>
+    resourceForPartner(partnerId, projectId)?.billable_rate_eur || 0;
   const isExternalResource = (partnerId: string, projectId: string | null | undefined) =>
     resourceForPartner(partnerId, projectId)?.kind === "external";
   const personnelCostBase = (c: CompensationEffect) => {
     if (c.classification === "approved_non_billable") return Math.abs(c.amount_eur);
-    return c.hours * actualInternalRate(c.partner_id, c.project_id);
+    return c.hours * actualResourceRate(c.partner_id, c.project_id);
   };
-  // Billable ledger stores rate=0 by design; derive expected (billable) vs actual (internal) from resources/staffing.
+  // Billable ledger stores rate=0 by design; derive expected (staffing) vs actual (resource billable).
   const approvedBillableHours = periodCompensation
     .filter((c) => c.classification !== "approved_non_billable")
     .reduce((s, c) => s + c.hours, 0);
@@ -5392,15 +5387,6 @@ export default function App() {
                       value={resourceForm.billable_rate_eur}
                       onChange={(e) => setResourceForm((p) => ({ ...p, billable_rate_eur: e.target.value }))}
                     />
-                    <label htmlFor="resInternal">{t("resources.internalRate")}</label>
-                    <input
-                      id="resInternal"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={resourceForm.internal_rate_eur}
-                      onChange={(e) => setResourceForm((p) => ({ ...p, internal_rate_eur: e.target.value }))}
-                    />
                     <p className="field-hint">{t("resources.rateVatHint")}</p>
                     <label className="checkbox-row">
                       <input
@@ -5519,7 +5505,7 @@ export default function App() {
                             <div className="muted">
                               {r.company_name ? `${r.company_name} · ` : ""}
                               {t(`resources.kind.${r.kind}`)} · {t("resources.billableRate")} €
-                              {r.billable_rate_eur} · {t("resources.internalRate")} €{r.internal_rate_eur}
+                              {r.billable_rate_eur}
                               {r.is_senior ? ` · ${t("resources.seniorBadge")}` : ""}
                               {r.is_partner ? ` · ${t("resources.partnerBadge")}` : ""}
                             </div>

@@ -363,8 +363,8 @@
     "approvedHoursLine": "Goedgekeurde billable uren: {{hours}}u",
     "personnelExpectedCost": "Verwachte personeelskosten (billable-tarieven): €{{eur}}",
     "personnelExpectedHint": "Goedgekeurde uren × project-/resource billable-tarief (ex BTW).",
-    "personnelActualCost": "Werkelijke personeelskosten (interne tarieven): €{{eur}}",
-    "personnelActualHint": "Goedgekeurde uren × intern tarief (ex BTW) · chargebacks €{{chargeback}} inbegrepen.",
+    "personnelActualCost": "Werkelijke personeelskosten (factureertarieven): €{{eur}}",
+    "personnelActualHint": "Goedgekeurde uren × factureertarief (ex BTW) · chargebacks €{{chargeback}} inbegrepen.",
     "personnelVatLine": "BTW op externe resources ({{rate}}%): €{{eur}}",
     "personnelVatHint": "Tarieven zijn exclusief BTW. Deze BTW is verschuldigd op externe facturen en volledig aftrekbaar — het beïnvloedt de brutowinst niet.",
     "personnelCostTotal": "Personeelskosten: €{{eur}}",
@@ -444,8 +444,7 @@
       "external": "Extern"
     },
     "billableRate": "Factureertarief (€/u, ex BTW)",
-    "internalRate": "Intern tarief (€/u, ex BTW)",
-    "rateVatHint": "Tarieven zijn exclusief BTW. Bij externe resources wordt BTW op hun factuur betaald en is aftrekbaar als voorbelasting.",
+    "rateVatHint": "Tarief is exclusief BTW. Bij externe resources wordt BTW op hun factuur betaald en is aftrekbaar als voorbelasting.",
     "isSenior": "Senior (eligible voor kickoff)",
     "isPartner": "Partner",
     "seniorBadge": "Senior",
@@ -462,7 +461,7 @@
     "bankAccount": "Bankrekening (IBAN)",
     "invoiceEmail": "Factuur-e-mail",
     "missingName": "Naam is verplicht.",
-    "invalidRates": "Voer een geldig factureertarief (> 0) en intern tarief (≥ 0) in.",
+    "invalidRates": "Voer een geldig factureertarief (> 0) in.",
     "listTitle": "Resourcelijst"
   },
   "project": {

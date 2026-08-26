@@ -363,8 +363,8 @@
     "approvedHoursLine": "Approved billable hours: {{hours}}h",
     "personnelExpectedCost": "Expected personnel cost (billable rates): €{{eur}}",
     "personnelExpectedHint": "Approved hours × project/resource billable rate (ex VAT).",
-    "personnelActualCost": "Actual personnel cost (internal rates): €{{eur}}",
-    "personnelActualHint": "Approved hours × internal rate (ex VAT) · chargebacks €{{chargeback}} included.",
+    "personnelActualCost": "Actual personnel cost (billable rates): €{{eur}}",
+    "personnelActualHint": "Approved hours × billable rate (ex VAT) · chargebacks €{{chargeback}} included.",
     "personnelVatLine": "VAT on external personnel ({{rate}}%): €{{eur}}",
     "personnelVatHint": "Rates are ex-VAT. This VAT is payable on external invoices and fully reclaimable — it does not affect gross profit.",
     "personnelCostTotal": "Personnel costs: €{{eur}}",
@@ -444,8 +444,7 @@
       "external": "External"
     },
     "billableRate": "Billable rate (€/h, ex VAT)",
-    "internalRate": "Internal rate (€/h, ex VAT)",
-    "rateVatHint": "Rates exclude VAT. For external resources, VAT is paid on their invoice and reclaimable as input VAT.",
+    "rateVatHint": "Rate excludes VAT. For external resources, VAT is paid on their invoice and reclaimable as input VAT.",
     "isSenior": "Senior (eligible for kickoff)",
     "isPartner": "Partner",
     "seniorBadge": "Senior",
@@ -462,7 +461,7 @@
     "bankAccount": "Bank account (IBAN)",
     "invoiceEmail": "Invoice email",
     "missingName": "Name is required.",
-    "invalidRates": "Enter a valid billable rate (> 0) and internal rate (≥ 0).",
+    "invalidRates": "Enter a valid billable rate (> 0).",
     "listTitle": "Resource list"
   },
   "project": {
