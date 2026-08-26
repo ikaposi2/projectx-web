@@ -294,10 +294,10 @@ type AppView =
   | "catalog"
   | "projects"
   | "resources"
+  | "unavailable"
   | "planning";
 type FinancePanel = "operational" | "billing" | "costs" | "kpis" | null;
 type KpiHorizon = "monthly" | "quarterly" | "annually";
-type UnavailSlot = "am" | "pm" | "after";
 type NavIconName =
   | "home"
   | "hours"
@@ -510,11 +510,19 @@ function ProjectPhaseDial({
   );
 }
 
-const UNAVAIL_SLOTS: { id: UnavailSlot; labelKey: string; startHour: number }[] = [
-  { id: "am", labelKey: "agenda.slotAm", startHour: 9 },
-  { id: "pm", labelKey: "agenda.slotPm", startHour: 13 },
-  { id: "after", labelKey: "agenda.slotAfter", startHour: 17 },
-];
+function defaultUnavailLocalRange(): { starts_at: string; ends_at: string } {
+  const start = new Date();
+  start.setHours(9, 0, 0, 0);
+  if (start.getTime() < Date.now()) {
+    start.setDate(start.getDate() + 1);
+  }
+  const end = new Date(start);
+  end.setHours(17, 0, 0, 0);
+  return {
+    starts_at: toDateTimeLocalValue(start.toISOString()),
+    ends_at: toDateTimeLocalValue(end.toISOString()),
+  };
+}
 
 const CORP_TAX_RATE = 0.258;
 /** Dutch default VAT; personnel rates are stored ex-VAT. */
@@ -775,13 +783,12 @@ export default function App() {
   const [agendaResourceId, setAgendaResourceId] = useState<string>("");
   const [projectAgendaId, setProjectAgendaId] = useState<string>("");
   const [projectAgenda, setProjectAgenda] = useState<KickoffAppointment[]>([]);
-  const [calendarForm, setCalendarForm] = useState({
+  const [calendarForm, setCalendarForm] = useState(() => ({
     consultant_rate_id: "",
-    day: "",
-    slot: "am" as UnavailSlot,
+    starts_at: defaultUnavailLocalRange().starts_at,
+    ends_at: defaultUnavailLocalRange().ends_at,
     notes: "",
-  });
-  const [planningCalendar, setPlanningCalendar] = useState(false);
+  }));
   const [monthlyCosts, setMonthlyCosts] = useState<MonthlyCost[]>([]);
   const [allMonthlyCosts, setAllMonthlyCosts] = useState<MonthlyCost[]>([]);
   const [otherCostForm, setOtherCostForm] = useState({
@@ -1256,11 +1263,13 @@ export default function App() {
   }, [token, user, view, loadCatalog]);
 
   useEffect(() => {
-    if (!token || !user || (view !== "resources" && view !== "planning")) return;
+    if (!token || !user || (view !== "resources" && view !== "planning" && view !== "unavailable")) return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadResources();
-    void loadResourceCalendar();
-    void loadManagedProjects();
+    if (view !== "unavailable") {
+      void loadResourceCalendar();
+      void loadManagedProjects();
+    }
   }, [token, user, view, loadResources, loadResourceCalendar, resourceCalendarWeek, loadManagedProjects]);
 
   useEffect(() => {
@@ -1486,7 +1495,8 @@ export default function App() {
       if (detail === "invalid_staffing") return t("budget.invalidStaffing");
       if (detail === "invalid_rate") return t("budget.invalidRate");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
-      if (detail === "block_must_be_4h") return t("agenda.blockMustBe4h");
+      if (detail === "invalid_range") return t("agenda.invalidRange");
+      if (detail === "range_too_large") return t("agenda.rangeTooLarge");
       if (detail === "kickoff_already_booked") return t("agenda.alreadyBooked");
       if (detail === "slot_in_past") return t("agenda.slotInPast");
       if (detail === "no_seniors") return t("agenda.noSeniors");
@@ -2365,14 +2375,12 @@ export default function App() {
   function openResourceCreate() {
     setCreatingResource(true);
     setEditingResourceId(null);
-    setPlanningCalendar(false);
     setResourceForm(emptyResourceForm);
   }
 
   function openResourceEdit(r: Resource) {
     setCreatingResource(false);
     setEditingResourceId(r.id);
-    setPlanningCalendar(false);
     setResourceForm({
       display_name: r.display_name,
       kind: r.kind === "internal" ? "internal" : "external",
@@ -2381,6 +2389,20 @@ export default function App() {
       is_senior: r.is_senior,
       is_partner: r.is_partner,
     });
+  }
+
+  function openUnavailablePage(resourceId?: string) {
+    const range = defaultUnavailLocalRange();
+    setCreatingResource(false);
+    setEditingResourceId(null);
+    setCalendarForm({
+      consultant_rate_id: resourceId || "",
+      starts_at: range.starts_at,
+      ends_at: range.ends_at,
+      notes: "",
+    });
+    setTimeError(null);
+    goToView("unavailable");
   }
 
   async function saveResource() {
@@ -2454,16 +2476,16 @@ export default function App() {
       setTimeError(t("agenda.resourceRequired"));
       return;
     }
-    if (!calendarForm.day) {
+    const starts = fromDateTimeLocalValue(calendarForm.starts_at);
+    const ends = fromDateTimeLocalValue(calendarForm.ends_at);
+    if (!starts || !ends) {
       setTimeError(t("agenda.endsRequired"));
       return;
     }
-    const slot = UNAVAIL_SLOTS.find((s) => s.id === calendarForm.slot) ?? UNAVAIL_SLOTS[0];
-    const [y, m, d] = calendarForm.day.split("-").map(Number);
-    const startLocal = new Date(y, m - 1, d, slot.startHour, 0, 0, 0);
-    const endLocal = new Date(y, m - 1, d, slot.startHour + 4, 0, 0, 0);
-    const starts = startLocal.toISOString();
-    const ends = endLocal.toISOString();
+    if (new Date(ends).getTime() <= new Date(starts).getTime()) {
+      setTimeError(t("agenda.invalidRange"));
+      return;
+    }
     setTimeError(null);
     setAdminStatus(null);
     try {
@@ -2486,13 +2508,14 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       setAdminStatus(t("agenda.blockSaved"));
-      setPlanningCalendar(false);
+      const range = defaultUnavailLocalRange();
       setCalendarForm({
         consultant_rate_id: "",
-        day: "",
-        slot: "am",
+        starts_at: range.starts_at,
+        ends_at: range.ends_at,
         notes: "",
       });
+      goToView("resources");
       await Promise.all([loadResourceCalendar(), loadFinance()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -2584,6 +2607,7 @@ export default function App() {
       view === "catalog" ||
       view === "projects" ||
       view === "resources" ||
+      view === "unavailable" ||
       view === "planning") &&
     !isManager
       ? "home"
@@ -3111,7 +3135,9 @@ export default function App() {
             {isManager ? (
               <button
                 type="button"
-                className={activeView === "resources" ? "nav-item active" : "nav-item"}
+                className={
+                  activeView === "resources" || activeView === "unavailable" ? "nav-item active" : "nav-item"
+                }
                 onClick={() => goToView("resources")}
                 title={t("nav.resources")}
               >
@@ -4579,13 +4605,7 @@ export default function App() {
                     <p>{t("planning.intro")}</p>
                   </div>
                   <div className="actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        goToView("resources");
-                        setPlanningCalendar(true);
-                      }}
-                    >
+                    <button type="button" onClick={() => openUnavailablePage()}>
                       {t("agenda.planBlock")}
                     </button>
                     <button type="button" className="primary" onClick={() => goToView("projects")}>
@@ -4708,6 +4728,74 @@ export default function App() {
               </section>
             ) : null}
 
+            {activeView === "unavailable" && isManager ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("agenda.planBlockTitle")}</h1>
+                    <p>{t("agenda.planBlockIntro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button type="button" onClick={() => goToView("resources")}>
+                      {t("agenda.backToResources")}
+                    </button>
+                  </div>
+                </div>
+                {adminStatus ? <p className="status">{adminStatus}</p> : null}
+                {timeError ? <p className="status error">{timeError}</p> : null}
+                <div className="customer-form">
+                  <label htmlFor="calResource">{t("agenda.resource")}</label>
+                  <select
+                    id="calResource"
+                    value={calendarForm.consultant_rate_id}
+                    onChange={(e) =>
+                      setCalendarForm((p) => ({ ...p, consultant_rate_id: e.target.value }))
+                    }
+                  >
+                    <option value="">{t("agenda.pickResource")}</option>
+                    {resources
+                      .filter((r) => r.active)
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.display_name}
+                        </option>
+                      ))}
+                  </select>
+                  <label htmlFor="calStarts">{t("agenda.startsAt")}</label>
+                  <input
+                    id="calStarts"
+                    type="datetime-local"
+                    value={calendarForm.starts_at}
+                    onChange={(e) => setCalendarForm((p) => ({ ...p, starts_at: e.target.value }))}
+                  />
+                  <label htmlFor="calEnds">{t("agenda.endsAt")}</label>
+                  <input
+                    id="calEnds"
+                    type="datetime-local"
+                    value={calendarForm.ends_at}
+                    onChange={(e) => setCalendarForm((p) => ({ ...p, ends_at: e.target.value }))}
+                  />
+                  <p className="field-hint">{t("agenda.rangeHint")}</p>
+                  <label htmlFor="calNotes">{t("agenda.notes")}</label>
+                  <input
+                    id="calNotes"
+                    value={calendarForm.notes}
+                    onChange={(e) => setCalendarForm((p) => ({ ...p, notes: e.target.value }))}
+                    maxLength={500}
+                    placeholder={t("agenda.notesHint")}
+                  />
+                  <div className="actions">
+                    <button type="button" className="primary" onClick={() => void saveCalendarBlock()}>
+                      {t("agenda.saveBlock")}
+                    </button>
+                    <button type="button" onClick={() => goToView("resources")}>
+                      {t("customer.cancel")}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             {activeView === "resources" && isManager ? (
               <section className="panel wide">
                 <div className="week-nav">
@@ -4716,14 +4804,7 @@ export default function App() {
                     <p>{t("resources.intro")}</p>
                   </div>
                   <div className="actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPlanningCalendar(true);
-                        setCreatingResource(false);
-                        setEditingResourceId(null);
-                      }}
-                    >
+                    <button type="button" onClick={() => openUnavailablePage()}>
                       {t("agenda.planBlock")}
                     </button>
                     <button type="button" className="primary" onClick={() => openResourceCreate()}>
@@ -4883,71 +4964,6 @@ export default function App() {
                   </ul>
                 )}
 
-                {planningCalendar ? (
-                  <div className="customer-form">
-                    <h2>{t("agenda.planBlockTitle")}</h2>
-                    <p className="status">{t("agenda.planBlockIntro")}</p>
-                    <label htmlFor="calResource">{t("agenda.resource")}</label>
-                    <select
-                      id="calResource"
-                      value={calendarForm.consultant_rate_id}
-                      onChange={(e) =>
-                        setCalendarForm((p) => ({ ...p, consultant_rate_id: e.target.value }))
-                      }
-                    >
-                      <option value="">{t("agenda.pickResource")}</option>
-                      {resources
-                        .filter((r) => r.active)
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.display_name}
-                          </option>
-                        ))}
-                    </select>
-                    <label htmlFor="calDay">{t("agenda.blockDay")}</label>
-                    <input
-                      id="calDay"
-                      type="date"
-                      value={calendarForm.day}
-                      onChange={(e) => setCalendarForm((p) => ({ ...p, day: e.target.value }))}
-                    />
-                    <label htmlFor="calSlot">{t("agenda.blockSlot")}</label>
-                    <select
-                      id="calSlot"
-                      value={calendarForm.slot}
-                      onChange={(e) =>
-                        setCalendarForm((p) => ({
-                          ...p,
-                          slot: e.target.value as UnavailSlot,
-                        }))
-                      }
-                    >
-                      {UNAVAIL_SLOTS.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {t(s.labelKey)}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="field-hint">{t("agenda.slotHint")}</p>
-                    <label htmlFor="calNotes">{t("agenda.notes")}</label>
-                    <input
-                      id="calNotes"
-                      value={calendarForm.notes}
-                      onChange={(e) => setCalendarForm((p) => ({ ...p, notes: e.target.value }))}
-                      maxLength={500}
-                      placeholder={t("agenda.notesHint")}
-                    />
-                    <div className="actions">
-                      <button type="button" className="primary" onClick={() => void saveCalendarBlock()}>
-                        {t("agenda.saveBlock")}
-                      </button>
-                      <button type="button" onClick={() => setPlanningCalendar(false)}>
-                        {t("customer.cancel")}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
                 {creatingResource || editingResourceId ? (
                   <div className="customer-form">
                     <h2>{editingResourceId ? t("resources.editTitle") : t("resources.createTitle")}</h2>
@@ -5041,15 +5057,7 @@ export default function App() {
                             </div>
                           </div>
                           <div className="entry-actions">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPlanningCalendar(true);
-                                setCalendarForm((p) => ({ ...p, consultant_rate_id: r.id }));
-                                setCreatingResource(false);
-                                setEditingResourceId(null);
-                              }}
-                            >
+                            <button type="button" onClick={() => openUnavailablePage(r.id)}>
                               {t("agenda.planBlock")}
                             </button>
                             <button type="button" onClick={() => openResourceEdit(r)}>
