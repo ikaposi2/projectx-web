@@ -283,6 +283,30 @@ type Resource = {
   is_senior: boolean;
   is_partner: boolean;
   active: boolean;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  country?: string | null;
+  vat_id?: string | null;
+  bank_account?: string | null;
+  invoice_email?: string | null;
+};
+
+type PersonnelCandidate = {
+  partner_id: string;
+  resource_id?: string | null;
+  display_name: string;
+  month: string;
+  hours: number;
+  rate_eur: number;
+  subtotal_eur: number;
+  vat_rate: number;
+  vat_eur: number;
+  total_eur: number;
+  already_generated: boolean;
+  invoice_id?: string | null;
+  invoice_number?: string | null;
 };
 
 type AppView =
@@ -824,8 +848,17 @@ export default function App() {
     internal_rate_eur: "75",
     is_senior: false,
     is_partner: false,
+    address_line1: "",
+    address_line2: "",
+    postal_code: "",
+    city: "",
+    country: "",
+    vat_id: "",
+    bank_account: "",
+    invoice_email: "",
   };
   const [resourceForm, setResourceForm] = useState(emptyResourceForm);
+  const [personnelCandidates, setPersonnelCandidates] = useState<PersonnelCandidate[]>([]);
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
   const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
@@ -1145,6 +1178,21 @@ export default function App() {
     }
   }, [token, costMonth]);
 
+  const loadPersonnelCandidates = useCallback(async () => {
+    if (!token || !costMonth) return;
+    try {
+      const res = await fetch(
+        `${FINANCE_API}/personnel-invoices/candidates?month=${encodeURIComponent(costMonth)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setPersonnelCandidates((await res.json()) as PersonnelCandidate[]);
+    } catch (err) {
+      setPersonnelCandidates([]);
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, costMonth]);
+
   const loadAllMonthlyCosts = useCallback(async () => {
     if (!token) return;
     try {
@@ -1244,6 +1292,7 @@ export default function App() {
     void loadResources();
     void loadMonthlyCosts();
     void loadAllMonthlyCosts();
+    void loadPersonnelCandidates();
   }, [
     token,
     user,
@@ -1254,6 +1303,8 @@ export default function App() {
     loadResources,
     loadMonthlyCosts,
     loadAllMonthlyCosts,
+    loadPersonnelCandidates,
+    costMonth,
   ]);
 
   useEffect(() => {
@@ -1494,6 +1545,9 @@ export default function App() {
       if (detail === "shares_must_sum_100") return t("budget.sharesMustSum");
       if (detail === "invalid_staffing") return t("budget.invalidStaffing");
       if (detail === "invalid_rate") return t("budget.invalidRate");
+      if (detail === "proposal_already_exists") return t("finance.personnelProposalExists");
+      if (detail === "no_hours_for_month") return t("finance.personnelNoHours");
+      if (detail === "invalid_month") return t("finance.personnelInvalidMonth");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
       if (detail === "invalid_range") return t("agenda.invalidRange");
       if (detail === "range_too_large") return t("agenda.rangeTooLarge");
@@ -2245,6 +2299,30 @@ export default function App() {
     }
   }
 
+  async function generatePersonnelProposal(partnerId: string) {
+    if (!token || !costMonth) return;
+    setTimeError(null);
+    setFinanceStatus(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/personnel-invoices/generate`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ partner_id: partnerId, month: costMonth }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(detail.detail, res.statusText));
+      }
+      setFinanceStatus(t("finance.personnelProposalGenerated"));
+      await loadPersonnelCandidates();
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function downloadInvoicePdf(invoiceId: string) {
     if (!token) return;
     try {
@@ -2388,6 +2466,14 @@ export default function App() {
       internal_rate_eur: String(r.internal_rate_eur),
       is_senior: r.is_senior,
       is_partner: r.is_partner,
+      address_line1: r.address_line1 || "",
+      address_line2: r.address_line2 || "",
+      postal_code: r.postal_code || "",
+      city: r.city || "",
+      country: r.country || "",
+      vat_id: r.vat_id || "",
+      bank_account: r.bank_account || "",
+      invoice_email: r.invoice_email || "",
     });
   }
 
@@ -2428,6 +2514,14 @@ export default function App() {
       is_senior: resourceForm.is_senior,
       is_partner: resourceForm.is_partner,
       active: true,
+      address_line1: resourceForm.address_line1.trim() || null,
+      address_line2: resourceForm.address_line2.trim() || null,
+      postal_code: resourceForm.postal_code.trim() || null,
+      city: resourceForm.city.trim() || null,
+      country: resourceForm.country.trim() || null,
+      vat_id: resourceForm.vat_id.trim() || null,
+      bank_account: resourceForm.bank_account.trim() || null,
+      invoice_email: resourceForm.invoice_email.trim() || null,
     };
     try {
       const url = editingResourceId
@@ -4023,6 +4117,55 @@ export default function App() {
                         ))}
                       </ul>
                     )}
+
+                    <h3>{t("finance.personnelProposalsTitle")}</h3>
+                    <p className="status">{t("finance.personnelProposalsIntro")}</p>
+                    {personnelCandidates.length === 0 ? (
+                      <p className="status">{t("finance.personnelProposalsEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {personnelCandidates.map((row) => (
+                          <li key={row.partner_id}>
+                            <div>
+                              <strong>{row.display_name}</strong>
+                              <div className="muted">
+                                {t("finance.personnelProposalLine", {
+                                  hours: row.hours,
+                                  rate: row.rate_eur.toFixed(2),
+                                  amount: row.subtotal_eur.toFixed(2),
+                                  vat: row.vat_eur.toFixed(2),
+                                  total: row.total_eur.toFixed(2),
+                                })}
+                              </div>
+                              {row.already_generated && row.invoice_number ? (
+                                <div className="muted">
+                                  {t("finance.personnelProposalRef", { number: row.invoice_number })}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="entry-actions">
+                              {row.already_generated && row.invoice_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadInvoicePdf(row.invoice_id!)}
+                                >
+                                  {t("finance.downloadPdf")}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="primary"
+                                  onClick={() => void generatePersonnelProposal(row.partner_id)}
+                                >
+                                  {t("finance.generatePersonnelProposal")}
+                                </button>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
                     <h3>{t("finance.monthlyCostsTitle")}</h3>
                     <p className="status">{t("finance.monthlyCostsIntro")}</p>
                     <p className="status">
@@ -5022,6 +5165,71 @@ export default function App() {
                       />
                       {t("resources.isPartner")}
                     </label>
+                    {resourceForm.kind === "external" ? (
+                      <>
+                        <h3>{t("resources.billingTitle")}</h3>
+                        <p className="field-hint">{t("resources.billingHint")}</p>
+                        <label htmlFor="resAddr1">{t("resources.addressLine1")}</label>
+                        <input
+                          id="resAddr1"
+                          value={resourceForm.address_line1}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, address_line1: e.target.value }))}
+                        />
+                        <label htmlFor="resAddr2">{t("resources.addressLine2")}</label>
+                        <input
+                          id="resAddr2"
+                          value={resourceForm.address_line2}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, address_line2: e.target.value }))}
+                        />
+                        <div className="form-row">
+                          <div>
+                            <label htmlFor="resPostal">{t("resources.postalCode")}</label>
+                            <input
+                              id="resPostal"
+                              value={resourceForm.postal_code}
+                              onChange={(e) =>
+                                setResourceForm((p) => ({ ...p, postal_code: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="resCity">{t("resources.city")}</label>
+                            <input
+                              id="resCity"
+                              value={resourceForm.city}
+                              onChange={(e) => setResourceForm((p) => ({ ...p, city: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <label htmlFor="resCountry">{t("resources.country")}</label>
+                        <input
+                          id="resCountry"
+                          value={resourceForm.country}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, country: e.target.value }))}
+                        />
+                        <label htmlFor="resVat">{t("resources.vatId")}</label>
+                        <input
+                          id="resVat"
+                          value={resourceForm.vat_id}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, vat_id: e.target.value }))}
+                        />
+                        <label htmlFor="resIban">{t("resources.bankAccount")}</label>
+                        <input
+                          id="resIban"
+                          value={resourceForm.bank_account}
+                          onChange={(e) => setResourceForm((p) => ({ ...p, bank_account: e.target.value }))}
+                        />
+                        <label htmlFor="resEmail">{t("resources.invoiceEmail")}</label>
+                        <input
+                          id="resEmail"
+                          type="email"
+                          value={resourceForm.invoice_email}
+                          onChange={(e) =>
+                            setResourceForm((p) => ({ ...p, invoice_email: e.target.value }))
+                          }
+                        />
+                      </>
+                    ) : null}
                     <div className="actions">
                       <button type="button" className="primary" onClick={() => void saveResource()}>
                         {editingResourceId ? t("resources.save") : t("resources.create")}
