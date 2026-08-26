@@ -579,6 +579,16 @@ function defaultUnavailLocalRange(): { starts_at: string; ends_at: string } {
   };
 }
 
+/** True when an appointment interval overlaps the local calendar day `dayIso` (YYYY-MM-DD). */
+function appointmentOverlapsDay(startsAt: string, endsAt: string, dayIso: string): boolean {
+  const dayStart = new Date(`${dayIso}T00:00:00`);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  return start < dayEnd && end > dayStart;
+}
+
 const CORP_TAX_RATE = 0.258;
 /** Dutch default VAT; personnel rates are stored ex-VAT. */
 const DEFAULT_VAT_RATE = 0.21;
@@ -5032,7 +5042,7 @@ export default function App() {
                               const dayItems = resourceWeekBlocks.filter(
                                 (a) =>
                                   a.consultant_rate_id === r.id &&
-                                  a.starts_at.slice(0, 10) === date,
+                                  appointmentOverlapsDay(a.starts_at, a.ends_at, date),
                               );
                               return (
                                 <td key={date}>
@@ -5047,6 +5057,17 @@ export default function App() {
                                               ? t("agenda.kind.kickoff")
                                               : t("agenda.kind.unavailable")}
                                           </strong>
+                                          <div className="muted">
+                                            {new Date(item.starts_at).toLocaleDateString([], {
+                                              month: "short",
+                                              day: "numeric",
+                                            })}
+                                            {"–"}
+                                            {new Date(item.ends_at).toLocaleDateString([], {
+                                              month: "short",
+                                              day: "numeric",
+                                            })}
+                                          </div>
                                           <div className="muted">
                                             {new Date(item.starts_at).toLocaleTimeString([], {
                                               hour: "2-digit",
@@ -5234,7 +5255,7 @@ export default function App() {
                               const dayItems = resourceWeekBlocks.filter(
                                 (a) =>
                                   a.consultant_rate_id === r.id &&
-                                  a.starts_at.slice(0, 10) === date,
+                                  appointmentOverlapsDay(a.starts_at, a.ends_at, date),
                               );
                               return (
                                 <td key={date}>
@@ -5249,6 +5270,17 @@ export default function App() {
                                               ? t("agenda.kind.kickoff")
                                               : t("agenda.kind.unavailable")}
                                           </strong>
+                                          <div className="muted">
+                                            {new Date(item.starts_at).toLocaleDateString([], {
+                                              month: "short",
+                                              day: "numeric",
+                                            })}
+                                            {"–"}
+                                            {new Date(item.ends_at).toLocaleDateString([], {
+                                              month: "short",
+                                              day: "numeric",
+                                            })}
+                                          </div>
                                           <div className="muted">
                                             {new Date(item.starts_at).toLocaleTimeString([], {
                                               hour: "2-digit",

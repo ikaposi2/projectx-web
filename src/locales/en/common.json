@@ -524,7 +524,7 @@
     "kickoffHoursDescription": "Kickoff session",
     "kickoffHoursFailed": "Appointment saved, but hour registration failed: {{detail}}",
     "kickoffHoursMissingPartner": "Senior has no linked partner id.",
-    "slotUnavailable": "That slot overlaps existing calendar time.",
+    "slotUnavailable": "That range overlaps another unavailable block. Cancel the existing one first, or pick a different range.",
     "alreadyBooked": "This project already has a kickoff booked.",
     "slotInPast": "Cannot book a slot in the past.",
     "noSeniors": "No active senior resources to assign.",

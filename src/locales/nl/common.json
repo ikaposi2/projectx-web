@@ -524,7 +524,7 @@
     "kickoffHoursDescription": "Kickoff-sessie",
     "kickoffHoursFailed": "Afspraak opgeslagen, maar urenregistratie mislukt: {{detail}}",
     "kickoffHoursMissingPartner": "Senior heeft geen gekoppelde partner-id.",
-    "slotUnavailable": "Dat slot overlapt bestaande kalendertijd.",
+    "slotUnavailable": "Die periode overlapt een ander onbeschikbaarheidsblok. Annuleer eerst het bestaande blok, of kies een andere periode.",
     "alreadyBooked": "Dit project heeft al een kickoff geboekt.",
     "slotInPast": "Kan geen slot in het verleden boeken.",
     "noSeniors": "Geen actieve seniors om toe te wijzen.",
