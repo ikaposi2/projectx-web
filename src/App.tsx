@@ -814,6 +814,15 @@ function unavailableOfficeDayHours(
 }
 
 const UNAVAILABLE_ENTRY_TAG = "Unavailable:";
+const DEMO_PARTNER_IDS = new Set(["senior-demo", "junior-demo", "partner-demo"]);
+
+/** True when partner_id is a real login user (not a seed placeholder or auto-generated orphan). */
+function isLinkedLoginUserId(partnerId: string, userId: string, tenantUserIds: Set<string>): boolean {
+  const id = (partnerId || "").trim();
+  if (!id || DEMO_PARTNER_IDS.has(id) || id.startsWith("unlinked-") || id.startsWith("u-")) return false;
+  if (id === userId) return true;
+  return tenantUserIds.has(id);
+}
 
 /** datetime-local value from ISO (local timezone). */
 function toDateTimeLocalValue(iso: string | null | undefined): string {
@@ -1043,8 +1052,10 @@ export default function App() {
     estimated_hours: "",
   });
   const [resources, setResources] = useState<Resource[]>([]);
+  const [tenantUserIds, setTenantUserIds] = useState<Set<string>>(() => new Set());
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
   const [creatingResource, setCreatingResource] = useState(false);
+  const unavailableRepairDone = useRef(false);
   const emptyResourceForm = {
     display_name: "",
     kind: "external" as "internal" | "external",
@@ -1488,6 +1499,20 @@ export default function App() {
     }
   }, [token]);
 
+  const loadTenantUsers = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const rows = (await res.json()) as { id: string }[];
+      setTenantUserIds(new Set(rows.map((r) => r.id)));
+    } catch {
+      /* optional directory — unavailable booking still works with user.id */
+    }
+  }, [token]);
+
   const loadResourceCalendar = useCallback(async () => {
     if (!token) return;
     const weekStartIso = toIsoDate(resourceCalendarWeek);
@@ -1525,8 +1550,18 @@ export default function App() {
     if (user && token) {
       void loadBookable();
       void loadEntries();
+      if (MANAGER_ROLES.has(user.role)) void loadTenantUsers();
     }
-  }, [user, token, loadBookable, loadEntries]);
+  }, [user, token, loadBookable, loadEntries, loadTenantUsers]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "hours") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    if (unavailableRepairDone.current) return;
+    unavailableRepairDone.current = true;
+    void repairOrphanedUnavailableHours();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot repair when opening hours
+  }, [token, user, view]);
 
   useEffect(() => {
     if (!token || !user || view !== "admin") return;
@@ -2770,10 +2805,14 @@ export default function App() {
 
   function openUnavailablePage(resourceId?: string) {
     const range = defaultUnavailLocalRange();
+    const mine =
+      resourceId ||
+      resources.find((r) => (r.partner_id || "").trim() === user?.id)?.id ||
+      "";
     setCreatingResource(false);
     setEditingResourceId(null);
     setCalendarForm({
-      consultant_rate_id: resourceId || "",
+      consultant_rate_id: mine,
       starts_at: range.starts_at,
       ends_at: range.ends_at,
       notes: "",
@@ -2855,8 +2894,205 @@ export default function App() {
     }
   }
 
-  async function saveCalendarBlock() {
+  async function linkResourceToUser(resourceId: string, partnerId: string): Promise<boolean> {
+    if (!token) return false;
+    const res = await fetch(`${PARTNER_API}/resources/${resourceId}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ partner_id: partnerId }),
+    });
+    if (!res.ok) return false;
+    setResources((prev) =>
+      prev.map((r) => (r.id === resourceId ? { ...r, partner_id: partnerId } : r)),
+    );
+    return true;
+  }
+
+  async function refuseEntryFully(entryId: string) {
     if (!token) return;
+    const refuseOnce = () =>
+      fetch(`${TIME_API}/entries/${entryId}/refuse`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    await refuseOnce();
+    await refuseOnce();
+  }
+
+  async function bookUnavailableHoursForAppointment(opts: {
+    appointmentId: string;
+    starts: string;
+    ends: string;
+    partnerId: string;
+    budgetId: string;
+  }): Promise<string | null> {
+    if (!token) return "no token";
+    const days = unavailableOfficeDayHours(opts.starts, opts.ends);
+    if (days.length === 0) return null;
+    const tag = `${UNAVAILABLE_ENTRY_TAG}${opts.appointmentId}`;
+    const from = days[0].date;
+    const to = days[days.length - 1].date;
+    const listRes = await fetch(`${TIME_API}/entries?from=${from}&to=${to}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (listRes.ok) {
+      const list = (await listRes.json()) as TimeEntry[];
+      for (const entry of list) {
+        if (!entry.description?.includes(tag)) continue;
+        if (entry.partner_id === opts.partnerId) continue;
+        // Orphaned under a resource placeholder / wrong id — move onto the linked user.
+        await refuseEntryFully(entry.id);
+      }
+    }
+    const freshRes = await fetch(`${TIME_API}/entries?from=${from}&to=${to}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const existing = freshRes.ok
+      ? ((await freshRes.json()) as TimeEntry[]).filter((e) => e.description?.includes(tag))
+      : [];
+    for (const day of days) {
+      if (
+        existing.some(
+          (e) =>
+            e.work_date === day.date &&
+            e.partner_id === opts.partnerId &&
+            Math.abs(e.hours - day.hours) < 0.01,
+        )
+      ) {
+        continue;
+      }
+      const hoursRes = await fetch(`${TIME_API}/entries`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          work_date: day.date,
+          hours: day.hours,
+          classification: "non_billable",
+          description: `${tag} ${t("agenda.unavailableHoursDescription")}`,
+          project_id: opts.budgetId,
+          partner_id: opts.partnerId,
+          auto_approve: true,
+          rate_eur: 0,
+        }),
+      });
+      if (!hoursRes.ok) {
+        const detail = await hoursRes.json().catch(() => ({}));
+        return formatApiError(detail.detail, hoursRes.statusText);
+      }
+    }
+    return null;
+  }
+
+  /** Resolve whose timesheet gets unavailable hours; auto-link unlinked resources to the current user when safe. */
+  async function resolveUnavailablePartnerId(resource: Resource): Promise<{
+    partnerId: string | null;
+    autoLinked: boolean;
+    warning: string | null;
+  }> {
+    if (!user) return { partnerId: null, autoLinked: false, warning: t("agenda.unavailableHoursMissingPartner") };
+    const raw = (resource.partner_id || "").trim();
+    if (isLinkedLoginUserId(raw, user.id, tenantUserIds)) {
+      return { partnerId: raw, autoLinked: false, warning: null };
+    }
+    const alreadyMine = resources.some(
+      (r) => r.id !== resource.id && isLinkedLoginUserId(r.partner_id || "", user.id, tenantUserIds) && r.partner_id === user.id,
+    );
+    if (alreadyMine) {
+      return {
+        partnerId: null,
+        autoLinked: false,
+        warning: t("agenda.unavailableHoursMissingPartner"),
+      };
+    }
+    const linked = await linkResourceToUser(resource.id, user.id);
+    if (!linked) {
+      return {
+        partnerId: null,
+        autoLinked: false,
+        warning: t("agenda.unavailableHoursLinkFailed"),
+      };
+    }
+    return { partnerId: user.id, autoLinked: true, warning: null };
+  }
+
+  async function repairOrphanedUnavailableHours() {
+    if (!token || !user || !MANAGER_ROLES.has(user.role)) return;
+    const usersRes = await fetch(`${API}/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    let userIds = tenantUserIds;
+    if (usersRes.ok) {
+      const rows = (await usersRes.json()) as { id: string }[];
+      userIds = new Set(rows.map((r) => r.id));
+      setTenantUserIds(userIds);
+    }
+
+    const listRes = await fetch(`${PARTNER_API}/resources`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!listRes.ok) return;
+    const resourcesNow = (await listRes.json()) as Resource[];
+    setResources(resourcesNow);
+
+    const budgetRes = await fetch(`${PARTNER_API}/budgets/internal`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!budgetRes.ok) return;
+    const budgetList = (await budgetRes.json()) as InternalBudget[];
+    const unavailableBudget =
+      budgetList.find((b) => b.name.toLowerCase() === "unavailable") ||
+      budgetList.find((b) => b.id === "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    if (!unavailableBudget) return;
+
+    const from = toIsoDate(addDays(new Date(), -120));
+    const to = toIsoDate(addDays(new Date(), 120));
+    const apptRes = await fetch(
+      `${PARTNER_API}/appointments?from_day=${from}&to_day=${to}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!apptRes.ok) return;
+    const appointments = (await apptRes.json()) as KickoffAppointment[];
+    const unavailable = appointments.filter((a) => a.kind === "unavailable" || a.kind === "pto");
+
+    let mine = resourcesNow.filter((r) => (r.partner_id || "").trim() === user.id);
+    if (mine.length === 0) {
+      const orphans = resourcesNow.filter(
+        (r) => r.active && !isLinkedLoginUserId(r.partner_id || "", user.id, userIds),
+      );
+      const byName = orphans.find(
+        (r) => r.display_name.trim().toLowerCase() === (user.full_name || "").trim().toLowerCase(),
+      );
+      const claim = byName || (orphans.length === 1 ? orphans[0] : null);
+      if (claim) {
+        const ok = await linkResourceToUser(claim.id, user.id);
+        if (ok) mine = [{ ...claim, partner_id: user.id }];
+      }
+    }
+
+    const mineIds = new Set(mine.map((r) => r.id));
+    let touched = false;
+    for (const appt of unavailable) {
+      if (!mineIds.has(appt.consultant_rate_id)) continue;
+      const err = await bookUnavailableHoursForAppointment({
+        appointmentId: appt.id,
+        starts: appt.starts_at,
+        ends: appt.ends_at,
+        partnerId: user.id,
+        budgetId: unavailableBudget.id,
+      });
+      if (err === null) touched = true;
+    }
+    if (touched) await loadEntries();
+  }
+
+  async function saveCalendarBlock() {
+    if (!token || !user) return;
     if (!calendarForm.consultant_rate_id) {
       setTimeError(t("agenda.resourceRequired"));
       return;
@@ -2894,48 +3130,35 @@ export default function App() {
       }
       const appointment = (await res.json()) as KickoffAppointment;
       const resource = resources.find((r) => r.id === calendarForm.consultant_rate_id);
-      const partnerId = (resource?.partner_id || "").trim();
       let hoursWarning: string | null = null;
-      if (!partnerId) {
+      let autoLinked = false;
+      if (!resource) {
         hoursWarning = t("agenda.unavailableHoursMissingPartner");
       } else {
-        await loadBookable();
-        const budgetRes = await fetch(`${PARTNER_API}/budgets/internal`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!budgetRes.ok) throw new Error(await budgetRes.text());
-        const budgetList = (await budgetRes.json()) as InternalBudget[];
-        const unavailableBudget =
-          budgetList.find((b) => b.name.toLowerCase() === "unavailable") ||
-          budgetList.find((b) => b.id === "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
-        if (!unavailableBudget) {
-          hoursWarning = t("agenda.unavailableBudgetMissing");
+        const resolved = await resolveUnavailablePartnerId(resource);
+        autoLinked = resolved.autoLinked;
+        if (!resolved.partnerId) {
+          hoursWarning = resolved.warning;
         } else {
-          const days = unavailableOfficeDayHours(starts, ends);
-          const tag = `${UNAVAILABLE_ENTRY_TAG}${appointment.id}`;
-          for (const day of days) {
-            const hoursRes = await fetch(`${TIME_API}/entries`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                work_date: day.date,
-                hours: day.hours,
-                classification: "non_billable",
-                description: `${tag} ${t("agenda.unavailableHoursDescription")}`,
-                project_id: unavailableBudget.id,
-                partner_id: partnerId,
-                auto_approve: true,
-                rate_eur: 0,
-              }),
+          await loadBookable();
+          const budgetRes = await fetch(`${PARTNER_API}/budgets/internal`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!budgetRes.ok) throw new Error(await budgetRes.text());
+          const budgetList = (await budgetRes.json()) as InternalBudget[];
+          const unavailableBudget =
+            budgetList.find((b) => b.name.toLowerCase() === "unavailable") ||
+            budgetList.find((b) => b.id === "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+          if (!unavailableBudget) {
+            hoursWarning = t("agenda.unavailableBudgetMissing");
+          } else {
+            hoursWarning = await bookUnavailableHoursForAppointment({
+              appointmentId: appointment.id,
+              starts,
+              ends,
+              partnerId: resolved.partnerId,
+              budgetId: unavailableBudget.id,
             });
-            if (!hoursRes.ok) {
-              const detail = await hoursRes.json().catch(() => ({}));
-              hoursWarning = formatApiError(detail.detail, hoursRes.statusText);
-              break;
-            }
           }
         }
       }
@@ -2943,7 +3166,9 @@ export default function App() {
       setAdminStatus(
         hoursWarning
           ? `${t("agenda.blockSaved")} ${t("agenda.unavailableHoursFailed", { detail: hoursWarning })}`
-          : t("agenda.blockSavedWithHours"),
+          : autoLinked
+            ? t("agenda.blockSavedWithHoursLinked")
+            : t("agenda.blockSavedWithHours"),
       );
       const range = defaultUnavailLocalRange();
       setCalendarForm({
@@ -2953,7 +3178,7 @@ export default function App() {
         notes: "",
       });
       goToView("resources");
-      await Promise.all([loadResourceCalendar(), loadFinance(), loadEntries(), loadBookable()]);
+      await Promise.all([loadResourceCalendar(), loadFinance(), loadEntries(), loadBookable(), loadResources()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -5879,6 +6104,15 @@ export default function App() {
                     <p className="field-hint">
                       {t("resources.linkedUserHint", { id: user?.id || "—" })}
                     </p>
+                    {user?.id && resourceForm.partner_id.trim() !== user.id ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setResourceForm((p) => ({ ...p, partner_id: user.id }))}
+                      >
+                        {t("resources.linkToMe")}
+                      </button>
+                    ) : null}
                     <label htmlFor="resKind">{t("resources.kindLabel")}</label>
                     <select
                       id="resKind"
