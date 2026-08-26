@@ -516,6 +516,8 @@ const UNAVAIL_SLOTS: { id: UnavailSlot; labelKey: string; startHour: number }[] 
 ];
 
 const CORP_TAX_RATE = 0.258;
+/** Dutch default VAT; personnel rates are stored ex-VAT. */
+const DEFAULT_VAT_RATE = 0.21;
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -2065,7 +2067,7 @@ export default function App() {
     }
   }
 
-  async function remitVat(year: number, quarter: number) {
+  async function remitVat(year: number, quarter: number, amountEur?: number) {
     if (!token) return;
     setTimeError(null);
     setFinanceStatus(null);
@@ -2076,7 +2078,11 @@ export default function App() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ year, quarter }),
+        body: JSON.stringify({
+          year,
+          quarter,
+          ...(amountEur != null ? { amount_eur: amountEur } : {}),
+        }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
@@ -2658,6 +2664,12 @@ export default function App() {
   };
   const actualInternalRate = (partnerId: string, projectId: string | null | undefined) =>
     resourceForPartner(partnerId, projectId)?.internal_rate_eur || 0;
+  const isExternalResource = (partnerId: string, projectId: string | null | undefined) =>
+    resourceForPartner(partnerId, projectId)?.kind === "external";
+  const personnelCostBase = (c: CompensationEffect) => {
+    if (c.classification === "approved_non_billable") return Math.abs(c.amount_eur);
+    return c.hours * actualInternalRate(c.partner_id, c.project_id);
+  };
   // Billable ledger stores rate=0 by design; derive expected (billable) vs actual (internal) from resources/staffing.
   const approvedBillableHours = periodCompensation
     .filter((c) => c.classification !== "approved_non_billable")
@@ -2666,21 +2678,39 @@ export default function App() {
     if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
     return s + c.hours * expectedBillableRate(c.partner_id, c.project_id);
   }, 0);
-  const personnelActualCost = periodCompensation.reduce((s, c) => {
-    if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
-    return s + c.hours * actualInternalRate(c.partner_id, c.project_id);
-  }, 0);
+  const personnelActualCost = periodCompensation.reduce((s, c) => s + personnelCostBase(c), 0);
   const personnelNonBillableCost = periodCompensation
     .filter((c) => c.classification === "approved_non_billable")
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
+  // External personnel invoices: rate is ex-VAT → VAT is paid then reclaimable as input VAT.
+  const personnelInputVat = periodCompensation.reduce((s, c) => {
+    if (!isExternalResource(c.partner_id, c.project_id)) return s;
+    return s + personnelCostBase(c) * DEFAULT_VAT_RATE;
+  }, 0);
   const personnelCostTotal = personnelActualCost;
   // Recurring monthly costs × months in the selected horizon (×1 / ×3 / ×12 when fully active).
   const nonPersonnelCostTotal = nonPersonnelForMonths(allMonthlyCosts, kpiMonths);
   const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
+  const personnelInputVatByQuarter = (() => {
+    const map = new Map<string, number>();
+    for (const c of compensation) {
+      if (!isExternalResource(c.partner_id, c.project_id)) continue;
+      const iso = c.updated_at || "";
+      if (!iso) continue;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      const label = `${d.getFullYear()}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+      map.set(label, (map.get(label) || 0) + personnelCostBase(c) * DEFAULT_VAT_RATE);
+    }
+    return map;
+  })();
   const vatThisQuarter =
     vatAccount?.quarters.find((q) => q.label === vatAccount.current_quarter)?.outstanding_eur ?? 0;
+  const vatInputThisQuarter =
+    personnelInputVatByQuarter.get(vatAccount?.current_quarter || "") || 0;
+  const vatNetThisQuarter = Math.max(0, vatThisQuarter - vatInputThisQuarter);
 
   function projectProfitStatus(p: ProjectDetail): {
     spent: number;
@@ -4221,6 +4251,13 @@ export default function App() {
                       })}
                     </p>
                     <p className="status">
+                      {t("finance.personnelVatLine", {
+                        eur: personnelInputVat.toFixed(2),
+                        rate: Math.round(DEFAULT_VAT_RATE * 100),
+                      })}
+                    </p>
+                    <p className="muted">{t("finance.personnelVatHint")}</p>
+                    <p className="status">
                       {t("finance.nonPersonnelCostTotal", { eur: nonPersonnelCostTotal.toFixed(2) })}
                     </p>
                     <p className="muted">
@@ -4251,6 +4288,12 @@ export default function App() {
                     <p className="status">
                       {t("finance.vatQuarterAmount", { eur: vatThisQuarter.toFixed(2) })}
                     </p>
+                    <p className="status">
+                      {t("finance.vatNetAfterInput", {
+                        eur: vatNetThisQuarter.toFixed(2),
+                        input: vatInputThisQuarter.toFixed(2),
+                      })}
+                    </p>
                     {reserve ? (
                       <p className="status">
                         {t("finance.reserveLine", {
@@ -4263,16 +4306,30 @@ export default function App() {
                     {vatAccount ? (
                       <>
                         <h3>{t("finance.vatAccount")}</h3>
+                        <p className="status">{t("finance.vatIntro")}</p>
+                        <p className="muted">{t("finance.vatInputIntro")}</p>
                         <p className="status">
                           {t("finance.vatBalance", {
-                            balance: vatAccount.balance_eur.toFixed(2),
+                            balance: Math.max(
+                              0,
+                              vatAccount.balance_eur -
+                                [...personnelInputVatByQuarter.values()].reduce((a, b) => a + b, 0),
+                            ).toFixed(2),
                             quarter: vatAccount.current_quarter,
                           })}
                         </p>
                         <ul className="entry-list">
                           {vatAccount.quarters
-                            .filter((q) => q.collected_eur > 0 || q.remitted_eur > 0)
-                            .map((q) => (
+                            .filter(
+                              (q) =>
+                                q.collected_eur > 0 ||
+                                q.remitted_eur > 0 ||
+                                (personnelInputVatByQuarter.get(q.label) || 0) > 0,
+                            )
+                            .map((q) => {
+                              const inputVat = personnelInputVatByQuarter.get(q.label) || 0;
+                              const netDue = Math.max(0, q.outstanding_eur - inputVat);
+                              return (
                               <li key={q.label}>
                                 <div>
                                   <strong>{q.label}</strong>
@@ -4283,16 +4340,26 @@ export default function App() {
                                       outstanding: q.outstanding_eur.toFixed(2),
                                     })}
                                   </div>
+                                  <div className="muted">
+                                    {t("finance.vatQuarterInputLine", {
+                                      input: inputVat.toFixed(2),
+                                      net: netDue.toFixed(2),
+                                    })}
+                                  </div>
                                 </div>
                                 <div className="entry-actions">
-                                  {q.can_remit ? (
-                                    <button type="button" onClick={() => void remitVat(q.year, q.quarter)}>
+                                  {netDue > 0.009 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void remitVat(q.year, q.quarter, netDue)}
+                                    >
                                       {t("finance.vatRemit")}
                                     </button>
                                   ) : null}
                                 </div>
                               </li>
-                            ))}
+                              );
+                            })}
                         </ul>
                       </>
                     ) : null}
@@ -4876,6 +4943,7 @@ export default function App() {
                       value={resourceForm.internal_rate_eur}
                       onChange={(e) => setResourceForm((p) => ({ ...p, internal_rate_eur: e.target.value }))}
                     />
+                    <p className="field-hint">{t("resources.rateVatHint")}</p>
                     <label className="checkbox-row">
                       <input
                         type="checkbox"
