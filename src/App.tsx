@@ -1,5 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  auditUiAction,
+  auditUiLogin,
+  auditUiLogout,
+  auditUiView,
+  setAuditUser,
+} from "./audit";
 
 type Brand = {
   display_name: string;
@@ -1215,6 +1222,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       setUser(null);
+      setAuditUser(null);
       return;
     }
     void fetch(`${API}/me`, {
@@ -1224,10 +1232,14 @@ export default function App() {
         if (!r.ok) throw new Error("session");
         return r.json();
       })
-      .then((u: User) => setUser(u))
+      .then((u: User) => {
+        setUser(u);
+        setAuditUser(u);
+      })
       .catch(() => {
         localStorage.removeItem("projectx.token");
         setToken(null);
+        setAuditUser(null);
       });
   }, [token]);
 
@@ -1742,12 +1754,20 @@ export default function App() {
       const data = (await res.json()) as { access_token: string };
       localStorage.setItem("projectx.token", data.access_token);
       setToken(data.access_token);
+      if (mode === "login") {
+        auditUiLogin("success", { "user.email": email.trim().toLowerCase() });
+      }
     } catch (err) {
+      if (mode === "login") {
+        auditUiLogin("failure", { "user.email": email.trim().toLowerCase() });
+      }
       setError(err instanceof Error ? err.message : "error");
     }
   }
 
   function logout() {
+    auditUiLogout();
+    setAuditUser(null);
     localStorage.removeItem("projectx.token");
     setToken(null);
     setUser(null);
@@ -2048,6 +2068,10 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
       }
+      auditUiAction(`hours-${action}`, "success", {
+        "time_entry.id": id,
+        ...(target?.project_id ? { "project.id": target.project_id } : {}),
+      });
       setAdminStatus(t(`time.actionOk.${action}`));
       // Optimistic remaining so the counter does not jump while NATS catches up.
       if (target?.project_id) {
@@ -2086,6 +2110,7 @@ export default function App() {
         await loadBookable();
       }
     } catch (err) {
+      auditUiAction(`hours-${action}`, "failure", { "time_entry.id": id });
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }
@@ -2419,9 +2444,18 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
+      auditUiAction("generate-invoice", "success", {
+        "project.id": projectId,
+        "invoice.kind": kind,
+        ...(kind === "tm_hours" ? { "labels.period": billingMonth } : {}),
+      });
       setFinanceStatus(t("finance.invoiceGenerated"));
       await loadFinance();
     } catch (err) {
+      auditUiAction("generate-invoice", "failure", {
+        "project.id": projectId,
+        "invoice.kind": kind,
+      });
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }
@@ -3163,6 +3197,10 @@ export default function App() {
         }
       }
 
+      auditUiAction("unavailable-save", "success", {
+        "appointment.id": appointment.id,
+        "resource.id": calendarForm.consultant_rate_id,
+      });
       setAdminStatus(
         hoursWarning
           ? `${t("agenda.blockSaved")} ${t("agenda.unavailableHoursFailed", { detail: hoursWarning })}`
@@ -3180,6 +3218,7 @@ export default function App() {
       goToView("resources");
       await Promise.all([loadResourceCalendar(), loadFinance(), loadEntries(), loadBookable(), loadResources()]);
     } catch (err) {
+      auditUiAction("unavailable-save", "failure");
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }
@@ -3549,6 +3588,7 @@ export default function App() {
     }
     setView(next);
     setNavOpen(false);
+    auditUiView(next);
   }
 
   function openProjectCreate() {
