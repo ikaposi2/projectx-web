@@ -691,7 +691,7 @@ function toIsoDate(d: Date): string {
 }
 
 /** Date (YYYY-MM-DD) + hour in Europe/Amsterdam for agenda matching. */
-function amsterdamDateHour(iso: string): { date: string; hour: number } {
+function amsterdamDateHour(iso: string): { date: string; hour: number; minute: number } {
   const d = new Date(iso);
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Amsterdam",
@@ -707,8 +707,68 @@ function amsterdamDateHour(iso: string): { date: string; hour: number } {
   return {
     date: `${get("year")}-${get("month")}-${get("day")}`,
     hour: Number(get("hour")),
+    minute: Number(get("minute")),
   };
 }
+
+/** Convert Europe/Amsterdam wall time on a calendar date to a UTC Date. */
+function amsterdamWallToUtc(date: string, hour: number, minute = 0): Date {
+  let t = Date.parse(
+    `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`,
+  );
+  for (let i = 0; i < 4; i++) {
+    const parts = amsterdamDateHour(new Date(t).toISOString());
+    if (parts.date === date && parts.hour === hour && parts.minute === minute) {
+      return new Date(t);
+    }
+    const got = Date.parse(`${parts.date}T00:00:00Z`) + (parts.hour * 60 + parts.minute) * 60000;
+    const want = Date.parse(`${date}T00:00:00Z`) + (hour * 60 + minute) * 60000;
+    t += want - got;
+  }
+  return new Date(t);
+}
+
+function amsterdamWeekdayMon0(date: string): number {
+  const probe = amsterdamWallToUtc(date, 12, 0);
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Amsterdam",
+    weekday: "short",
+  }).format(probe);
+  const map: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+  return map[wd] ?? 0;
+}
+
+/** Office-hour (Mon–Fri 09–17 Amsterdam) overlaps for an unavailable range. */
+function unavailableOfficeDayHours(
+  startsIso: string,
+  endsIso: string,
+): { date: string; hours: number }[] {
+  const rangeStart = new Date(startsIso);
+  const rangeEnd = new Date(endsIso);
+  if (!(rangeEnd > rangeStart)) return [];
+  const dates: string[] = [];
+  for (let t = rangeStart.getTime(); t <= rangeEnd.getTime(); t += 12 * 3600 * 1000) {
+    const { date } = amsterdamDateHour(new Date(t).toISOString());
+    if (!dates.includes(date)) dates.push(date);
+  }
+  const endDate = amsterdamDateHour(endsIso).date;
+  if (!dates.includes(endDate)) dates.push(endDate);
+
+  const out: { date: string; hours: number }[] = [];
+  for (const date of dates) {
+    if (amsterdamWeekdayMon0(date) >= 5) continue;
+    const officeStart = amsterdamWallToUtc(date, 9, 0);
+    const officeEnd = amsterdamWallToUtc(date, 17, 0);
+    const a = Math.max(rangeStart.getTime(), officeStart.getTime());
+    const b = Math.min(rangeEnd.getTime(), officeEnd.getTime());
+    if (b <= a) continue;
+    const hours = Math.round(((b - a) / 3600000) * 100) / 100;
+    if (hours > 0) out.push({ date, hours: Math.min(8, hours) });
+  }
+  return out;
+}
+
+const UNAVAILABLE_ENTRY_TAG = "Unavailable:";
 
 /** datetime-local value from ISO (local timezone). */
 function toDateTimeLocalValue(iso: string | null | undefined): string {
@@ -924,6 +984,7 @@ export default function App() {
     display_name: "",
     kind: "external" as "internal" | "external",
     billable_rate_eur: "150",
+    partner_id: "",
     is_senior: false,
     is_partner: false,
     company_name: "",
@@ -2131,14 +2192,11 @@ export default function App() {
       }
 
       // First paid hour: 1h billable kickoff on the senior, auto-approved.
-      const kickoffDay = new Date(slot.starts_at);
-      const workDate = [
-        kickoffDay.getFullYear(),
-        String(kickoffDay.getMonth() + 1).padStart(2, "0"),
-        String(kickoffDay.getDate()).padStart(2, "0"),
-      ].join("-");
+      const workDate = amsterdamDateHour(slot.starts_at).date;
+      const resource = resources.find((r) => r.id === slot.consultant_rate_id);
+      const partnerId = (resource?.partner_id || slot.partner_id || "").trim();
       let hoursWarning: string | null = null;
-      if (slot.partner_id) {
+      if (partnerId) {
         const hoursRes = await fetch(`${TIME_API}/entries`, {
           method: "POST",
           headers: {
@@ -2151,7 +2209,7 @@ export default function App() {
             classification: "billable",
             description: t("agenda.kickoffHoursDescription"),
             project_id: project.id,
-            partner_id: slot.partner_id,
+            partner_id: partnerId,
             auto_approve: true,
           }),
         });
@@ -2566,6 +2624,7 @@ export default function App() {
       display_name: r.display_name,
       kind: r.kind === "internal" ? "internal" : "external",
       billable_rate_eur: String(r.billable_rate_eur),
+      partner_id: r.partner_id || "",
       is_senior: r.is_senior,
       is_partner: r.is_partner,
       company_name: r.company_name || "",
@@ -2612,6 +2671,7 @@ export default function App() {
       display_name: name,
       kind: resourceForm.kind,
       billable_rate_eur: billable,
+      partner_id: resourceForm.partner_id.trim() || undefined,
       is_senior: resourceForm.is_senior,
       is_partner: resourceForm.is_partner,
       active: true,
@@ -2703,7 +2763,59 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
-      setAdminStatus(t("agenda.blockSaved"));
+      const appointment = (await res.json()) as KickoffAppointment;
+      const resource = resources.find((r) => r.id === calendarForm.consultant_rate_id);
+      const partnerId = (resource?.partner_id || "").trim();
+      let hoursWarning: string | null = null;
+      if (!partnerId) {
+        hoursWarning = t("agenda.unavailableHoursMissingPartner");
+      } else {
+        await loadBookable();
+        const budgetRes = await fetch(`${PARTNER_API}/budgets/internal`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!budgetRes.ok) throw new Error(await budgetRes.text());
+        const budgetList = (await budgetRes.json()) as InternalBudget[];
+        const unavailableBudget =
+          budgetList.find((b) => b.name.toLowerCase() === "unavailable") ||
+          budgetList.find((b) => b.id === "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+        if (!unavailableBudget) {
+          hoursWarning = t("agenda.unavailableBudgetMissing");
+        } else {
+          const days = unavailableOfficeDayHours(starts, ends);
+          const tag = `${UNAVAILABLE_ENTRY_TAG}${appointment.id}`;
+          for (const day of days) {
+            const hoursRes = await fetch(`${TIME_API}/entries`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                work_date: day.date,
+                hours: day.hours,
+                classification: "non_billable",
+                description: `${tag} ${t("agenda.unavailableHoursDescription")}`,
+                project_id: unavailableBudget.id,
+                partner_id: partnerId,
+                auto_approve: true,
+                rate_eur: 0,
+              }),
+            });
+            if (!hoursRes.ok) {
+              const detail = await hoursRes.json().catch(() => ({}));
+              hoursWarning = formatApiError(detail.detail, hoursRes.statusText);
+              break;
+            }
+          }
+        }
+      }
+
+      setAdminStatus(
+        hoursWarning
+          ? `${t("agenda.blockSaved")} ${t("agenda.unavailableHoursFailed", { detail: hoursWarning })}`
+          : t("agenda.blockSavedWithHours"),
+      );
       const range = defaultUnavailLocalRange();
       setCalendarForm({
         consultant_rate_id: "",
@@ -2712,7 +2824,7 @@ export default function App() {
         notes: "",
       });
       goToView("resources");
-      await Promise.all([loadResourceCalendar(), loadFinance()]);
+      await Promise.all([loadResourceCalendar(), loadFinance(), loadEntries(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -2723,6 +2835,7 @@ export default function App() {
     if (!window.confirm(t("agenda.confirmCancelBlock"))) return;
     setTimeError(null);
     try {
+      const block = resourceCalendar.find((a) => a.id === id);
       const res = await fetch(`${PARTNER_API}/appointments/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -2731,8 +2844,30 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
+
+      // Reverse auto-approved unavailable time-off (refuse twice: unlock then delete).
+      const tag = `${UNAVAILABLE_ENTRY_TAG}${id}`;
+      const from = block ? amsterdamDateHour(block.starts_at).date : toIsoDate(addDays(new Date(), -7));
+      const to = block ? amsterdamDateHour(block.ends_at).date : toIsoDate(addDays(new Date(), 90));
+      const listRes = await fetch(`${TIME_API}/entries?from=${from}&to=${to}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (listRes.ok) {
+        const list = (await listRes.json()) as TimeEntry[];
+        for (const entry of list) {
+          if (!entry.description?.includes(tag)) continue;
+          const refuseOnce = async () =>
+            fetch(`${TIME_API}/entries/${entry.id}/refuse`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          await refuseOnce();
+          await refuseOnce();
+        }
+      }
+
       setAdminStatus(t("agenda.blockCancelled"));
-      await Promise.all([loadResourceCalendar(), loadFinance()]);
+      await Promise.all([loadResourceCalendar(), loadFinance(), loadEntries(), loadBookable()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -5456,6 +5591,16 @@ export default function App() {
                       value={resourceForm.display_name}
                       onChange={(e) => setResourceForm((p) => ({ ...p, display_name: e.target.value }))}
                     />
+                    <label htmlFor="resPartnerId">{t("resources.linkedUserId")}</label>
+                    <input
+                      id="resPartnerId"
+                      value={resourceForm.partner_id}
+                      onChange={(e) => setResourceForm((p) => ({ ...p, partner_id: e.target.value }))}
+                      placeholder={user?.id || ""}
+                    />
+                    <p className="field-hint">
+                      {t("resources.linkedUserHint", { id: user?.id || "—" })}
+                    </p>
                     <label htmlFor="resKind">{t("resources.kindLabel")}</label>
                     <select
                       id="resKind"
