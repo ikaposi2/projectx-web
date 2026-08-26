@@ -418,6 +418,52 @@ function formatWeekRange(monday: Date, locale: string): string {
   return `${fmt.format(monday)} – ${fmt.format(sunday)}`;
 }
 
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthsFromTo(start: string, end: string): string[] {
+  const out: string[] = [];
+  let y = Number(start.slice(0, 4));
+  let m = Number(start.slice(5, 7));
+  const ey = Number(end.slice(0, 4));
+  const em = Number(end.slice(5, 7));
+  if (!y || !m || !ey || !em || start > end) return out;
+  while (y < ey || (y === ey && m <= em)) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+/** Accrued non-personnel € from definitions up to (and including) `throughMonth`. */
+function accruedNonPersonnel(
+  costs: {
+    amount_eur: number;
+    cadence: string;
+    start_month: string;
+    end_month: string | null;
+  }[],
+  throughMonth: string,
+): number {
+  let sum = 0;
+  for (const c of costs) {
+    if (c.cadence === "one_off") {
+      if (c.start_month <= throughMonth) sum += c.amount_eur || 0;
+      continue;
+    }
+    if (c.start_month > throughMonth) continue;
+    const end =
+      c.end_month && c.end_month < throughMonth ? c.end_month : throughMonth;
+    sum += (c.amount_eur || 0) * monthsFromTo(c.start_month, end).length;
+  }
+  return sum;
+}
+
 export default function App() {
   const { t, i18n } = useTranslation();
   const [brand, setBrand] = useState<Brand | null>(null);
@@ -494,6 +540,7 @@ export default function App() {
   });
   const [planningCalendar, setPlanningCalendar] = useState(false);
   const [monthlyCosts, setMonthlyCosts] = useState<MonthlyCost[]>([]);
+  const [allMonthlyCosts, setAllMonthlyCosts] = useState<MonthlyCost[]>([]);
   const [otherCostForm, setOtherCostForm] = useState({
     label: "",
     amount: "",
@@ -800,6 +847,19 @@ export default function App() {
     }
   }, [token, costMonth]);
 
+  const loadAllMonthlyCosts = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${FINANCE_API}/costs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAllMonthlyCosts((await res.json()) as MonthlyCost[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token]);
+
   const loadCatalog = useCallback(async () => {
     if (!token) return;
     try {
@@ -884,7 +944,17 @@ export default function App() {
     void loadFinance();
     void loadManagedProjects();
     void loadMonthlyCosts();
-  }, [token, user, view, loadFinance, financeWeekStart, loadManagedProjects, loadMonthlyCosts]);
+    void loadAllMonthlyCosts();
+  }, [
+    token,
+    user,
+    view,
+    loadFinance,
+    financeWeekStart,
+    loadManagedProjects,
+    loadMonthlyCosts,
+    loadAllMonthlyCosts,
+  ]);
 
   useEffect(() => {
     if (!token || !user || view !== "catalog") return;
@@ -1735,7 +1805,7 @@ export default function App() {
         notes: "",
       });
       setFinanceStatus(t("finance.costSaved"));
-      await loadMonthlyCosts();
+      await Promise.all([loadMonthlyCosts(), loadAllMonthlyCosts()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -1760,7 +1830,7 @@ export default function App() {
         const detail = await res.json().catch(() => ({}));
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
-      await loadMonthlyCosts();
+      await Promise.all([loadMonthlyCosts(), loadAllMonthlyCosts()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -1780,7 +1850,7 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       setFinanceStatus(t("finance.costDeleted"));
-      await loadMonthlyCosts();
+      await Promise.all([loadMonthlyCosts(), loadAllMonthlyCosts()]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -2210,11 +2280,26 @@ export default function App() {
   const receivedTotal = invoices
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.amount_eur, 0);
+  const revenueNetPaid = invoices
+    .filter((i) => i.status === "paid")
+    .reduce((s, i) => s + i.subtotal_eur, 0);
   const otherCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
-  const grossProfit =
-    invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.subtotal_eur, 0) -
-    nonBillableMonthCost -
-    otherCostsTotal;
+  const personnelBillableCost = compensation
+    .filter((c) => c.classification !== "approved_non_billable")
+    .reduce((s, c) => s + c.hours * (c.rate_eur || 0), 0);
+  const personnelNonBillableCost = compensation
+    .filter((c) => c.classification === "approved_non_billable")
+    .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
+  const personnelCostTotal = personnelBillableCost + personnelNonBillableCost;
+  const nonPersonnelCostTotal = accruedNonPersonnel(allMonthlyCosts, monthKey(new Date()));
+  const nonPersonnelBreakdown = [...allMonthlyCosts]
+    .map((c) => {
+      const accrued = accruedNonPersonnel([c], monthKey(new Date()));
+      return { ...c, accrued };
+    })
+    .filter((c) => c.accrued > 0)
+    .sort((a, b) => b.accrued - a.accrued);
+  const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
   const vatThisQuarter =
@@ -3507,8 +3592,54 @@ export default function App() {
                     <p className="status">
                       {t("finance.receivedTotal", { eur: receivedTotal.toFixed(2) })}
                     </p>
+                    <h3>{t("finance.costOverviewTitle")}</h3>
+                    <p className="status">{t("finance.costOverviewIntro")}</p>
+                    <p className="status">
+                      {t("finance.personnelCostTotal", { eur: personnelCostTotal.toFixed(2) })}
+                    </p>
+                    <p className="muted">
+                      {t("finance.personnelCostDetail", {
+                        billable: personnelBillableCost.toFixed(2),
+                        nonBillable: personnelNonBillableCost.toFixed(2),
+                      })}
+                    </p>
+                    <p className="status">
+                      {t("finance.nonPersonnelCostTotal", { eur: nonPersonnelCostTotal.toFixed(2) })}
+                    </p>
+                    {nonPersonnelBreakdown.length === 0 ? (
+                      <p className="status">{t("finance.nonPersonnelEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {nonPersonnelBreakdown.map((row) => (
+                          <li key={row.id}>
+                            <div>
+                              <strong>
+                                {row.label} · €{row.accrued.toFixed(2)}
+                              </strong>
+                              <div className="muted">
+                                {row.cadence === "recurring"
+                                  ? t("finance.costRecurringRange", {
+                                      start: row.start_month,
+                                      end: row.end_month || t("finance.costOngoing"),
+                                    })
+                                  : t("finance.costOneOffMonth", { month: row.start_month })}
+                                {` · €${row.amount_eur.toFixed(2)}`}
+                                {row.cadence === "recurring" ? t("finance.perMonth") : ""}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <p className="status">
                       {t("finance.grossProfit", { eur: grossProfit.toFixed(2) })}
+                    </p>
+                    <p className="muted">
+                      {t("finance.grossProfitDetail", {
+                        revenue: revenueNetPaid.toFixed(2),
+                        personnel: personnelCostTotal.toFixed(2),
+                        nonPersonnel: nonPersonnelCostTotal.toFixed(2),
+                      })}
                     </p>
                     <p className="status">
                       {t("finance.projectedTax", {
