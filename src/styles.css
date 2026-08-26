@@ -546,3 +546,81 @@ body {
 .error {
   color: #ffb4a8;
 }
+
+.finance-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1rem 0 0.25rem;
+}
+
+.finance-project-card {
+  width: 100%;
+}
+
+.bar-track {
+  height: 0.55rem;
+  margin: 0.45rem 0 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand-accent);
+}
+
+.bar-fill.bar-ok,
+.bar-fill.bar-green {
+  background: #6fbf8a;
+}
+
+.bar-fill.bar-warn,
+.bar-fill.bar-yellow {
+  background: #d4b35a;
+}
+
+.bar-fill.bar-red {
+  background: #e07a6a;
+}
+
+.agenda-grid td {
+  vertical-align: top;
+  min-width: 7.5rem;
+}
+
+.agenda-day-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.agenda-day-list li {
+  padding: 0.35rem 0.4rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agenda-day-list button {
+  margin-top: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.historical-row .row-label {
+  opacity: 0.85;
+}
+
+.panel select {
+  width: 100%;
+  margin-bottom: 0.9rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font: inherit;
+}

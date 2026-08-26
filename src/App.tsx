@@ -229,6 +229,8 @@ type GridRow = {
   label: string;
   subtitle?: string;
   classification: "billable" | "non_billable";
+  /** Closed / historical project — show booked hours, do not allow new booking. */
+  readOnly?: boolean;
 };
 
 type InvoiceAgendaItem = {
@@ -271,6 +273,16 @@ type Resource = {
 };
 
 type AppView = "hours" | "admin" | "customers" | "finance" | "catalog" | "projects" | "resources";
+type FinancePanel = "operational" | "billing" | "costs" | "kpis" | null;
+type UnavailSlot = "am" | "pm" | "after";
+
+const UNAVAIL_SLOTS: { id: UnavailSlot; labelKey: string; startHour: number }[] = [
+  { id: "am", labelKey: "agenda.slotAm", startHour: 9 },
+  { id: "pm", labelKey: "agenda.slotPm", startHour: 13 },
+  { id: "after", labelKey: "agenda.slotAfter", startHour: 17 },
+];
+
+const CORP_TAX_RATE = 0.258;
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -409,12 +421,14 @@ export default function App() {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [adminEntries, setAdminEntries] = useState<TimeEntry[]>([]);
   const [projects, setProjects] = useState<BookableProject[]>([]);
+  const [projectLabels, setProjectLabels] = useState<Record<string, string>>({});
   const [budgets, setBudgets] = useState<InternalBudget[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [mspCustomers, setMspCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
@@ -447,6 +461,8 @@ export default function App() {
   const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
+  const [financePanel, setFinancePanel] = useState<FinancePanel>(null);
+  const [invoiceSearch, setInvoiceSearch] = useState({ q: "", date: "", id: "" });
   const [financeWeekStart, setFinanceWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
   const [kickoffAppointments, setKickoffAppointments] = useState<KickoffAppointment[]>([]);
@@ -455,14 +471,24 @@ export default function App() {
   const [kickoffLoading, setKickoffLoading] = useState(false);
   const [resourceCalendarWeek, setResourceCalendarWeek] = useState(() => startOfIsoWeek(new Date()));
   const [resourceCalendar, setResourceCalendar] = useState<KickoffAppointment[]>([]);
+  const [agendaResourceId, setAgendaResourceId] = useState<string>("");
+  const [projectAgendaId, setProjectAgendaId] = useState<string>("");
+  const [projectAgenda, setProjectAgenda] = useState<KickoffAppointment[]>([]);
   const [calendarForm, setCalendarForm] = useState({
     consultant_rate_id: "",
-    kind: "pto" as "pto" | "unavailable",
-    starts_at: "",
-    ends_at: "",
+    day: "",
+    slot: "am" as UnavailSlot,
     notes: "",
   });
   const [planningCalendar, setPlanningCalendar] = useState(false);
+  const [supplierInvoices, setSupplierInvoices] = useState<
+    { id: string; label: string; amount: string; matched: boolean; paid: boolean }[]
+  >([]);
+  const [otherCostForm, setOtherCostForm] = useState({ label: "", amount: "" });
+  const [costMonth, setCostMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [creatingCatalog, setCreatingCatalog] = useState(false);
@@ -499,8 +525,13 @@ export default function App() {
     [weekStart],
   );
 
-  const rows: GridRow[] = useMemo(
-    () => [
+  const myEntries = useMemo(
+    () => (user ? entries.filter((entry) => entry.partner_id === user.id) : entries),
+    [entries, user],
+  );
+
+  const rows: GridRow[] = useMemo(() => {
+    const bookable: GridRow[] = [
       ...projects.map((p) => ({
         id: p.id,
         label: `${p.customer_name} · ${p.name}`,
@@ -513,14 +544,23 @@ export default function App() {
         subtitle: String(b.remaining_hours),
         classification: "non_billable" as const,
       })),
-    ],
-    [projects, budgets],
-  );
-
-  const myEntries = useMemo(
-    () => (user ? entries.filter((entry) => entry.partner_id === user.id) : entries),
-    [entries, user],
-  );
+    ];
+    const known = new Set(bookable.map((r) => r.id));
+    const historical: GridRow[] = [];
+    for (const entry of myEntries) {
+      if (!entry.project_id || known.has(entry.project_id)) continue;
+      if (historical.some((h) => h.id === entry.project_id)) continue;
+      historical.push({
+        id: entry.project_id,
+        label: projectLabels[entry.project_id] ?? entry.project_id,
+        subtitle: undefined,
+        classification: entry.classification,
+        readOnly: true,
+      });
+      known.add(entry.project_id);
+    }
+    return [...bookable, ...historical];
+  }, [projects, budgets, myEntries, projectLabels]);
 
   const entryByKey = useMemo(() => {
     const rank = (status: TimeEntry["status"]) =>
@@ -602,11 +642,14 @@ export default function App() {
   const loadBookable = useCallback(async () => {
     if (!token) return;
     try {
-      const [projRes, budRes] = await Promise.all([
+      const [projRes, budRes, allRes] = await Promise.all([
         fetch(`${PROJECT_API}/projects/bookable`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_API}/budgets/internal`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PROJECT_API}/projects/bookable?include_complete=true`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -614,6 +657,14 @@ export default function App() {
       if (!budRes.ok) throw new Error(await budRes.text());
       setProjects((await projRes.json()) as BookableProject[]);
       setBudgets((await budRes.json()) as InternalBudget[]);
+      if (allRes.ok) {
+        const all = (await allRes.json()) as BookableProject[];
+        const labels: Record<string, string> = {};
+        for (const p of all) {
+          labels[p.id] = `${p.customer_name} · ${p.name}`;
+        }
+        setProjectLabels(labels);
+      }
       setTimeError(null);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
@@ -757,6 +808,25 @@ export default function App() {
     }
   }, [token, resourceCalendarWeek]);
 
+  const loadProjectAgenda = useCallback(async () => {
+    if (!token || !projectAgendaId) {
+      setProjectAgenda([]);
+      return;
+    }
+    const from = toIsoDate(new Date());
+    const to = toIsoDate(addDays(new Date(), 90));
+    try {
+      const res = await fetch(
+        `${PARTNER_API}/appointments?from_day=${from}&to_day=${to}&project_id=${encodeURIComponent(projectAgendaId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setProjectAgenda((await res.json()) as KickoffAppointment[]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }, [token, projectAgendaId]);
+
   useEffect(() => {
     if (user && token) {
       void loadBookable();
@@ -782,7 +852,8 @@ export default function App() {
     if (!token || !user || view !== "finance") return;
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadFinance();
-  }, [token, user, view, loadFinance, financeWeekStart]);
+    void loadManagedProjects();
+  }, [token, user, view, loadFinance, financeWeekStart, loadManagedProjects]);
 
   useEffect(() => {
     if (!token || !user || view !== "catalog") return;
@@ -795,7 +866,13 @@ export default function App() {
     if (!MANAGER_ROLES.has(user.role)) return;
     void loadResources();
     void loadResourceCalendar();
-  }, [token, user, view, loadResources, loadResourceCalendar, resourceCalendarWeek]);
+    void loadManagedProjects();
+  }, [token, user, view, loadResources, loadResourceCalendar, resourceCalendarWeek, loadManagedProjects]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "resources") return;
+    void loadProjectAgenda();
+  }, [token, user, view, loadProjectAgenda]);
 
   useEffect(() => {
     if (!token || view !== "projects" || !projectCreateCustomerQuery.trim()) {
@@ -919,7 +996,7 @@ export default function App() {
   }
 
   async function persistCell(row: GridRow, date: string, raw: string) {
-    if (!token) return;
+    if (!token || row.readOnly) return;
     const key = `${row.id}|${date}`;
     const entry = entryByKey.get(key);
     const trimmed = raw.trim();
@@ -1009,6 +1086,7 @@ export default function App() {
       if (detail === "invalid_staffing") return t("budget.invalidStaffing");
       if (detail === "invalid_rate") return t("budget.invalidRate");
       if (detail === "slot_unavailable") return t("agenda.slotUnavailable");
+      if (detail === "block_must_be_4h") return t("agenda.blockMustBe4h");
       if (detail === "kickoff_already_booked") return t("agenda.alreadyBooked");
       if (detail === "slot_in_past") return t("agenda.slotInPast");
       if (detail === "no_seniors") return t("agenda.noSeniors");
@@ -1063,12 +1141,21 @@ export default function App() {
 
   function startEditCustomer(customer: Customer) {
     setEditingCustomerId(customer.id);
+    setCreatingCustomer(false);
     setCustomerForm(customerToForm(customer));
+    setCustomerError(null);
+  }
+
+  function startCreateCustomer() {
+    setEditingCustomerId(null);
+    setCreatingCustomer(true);
+    setCustomerForm(emptyCustomerForm);
     setCustomerError(null);
   }
 
   function cancelEditCustomer() {
     setEditingCustomerId(null);
+    setCreatingCustomer(false);
     setCustomerForm(emptyCustomerForm);
     setCustomerError(null);
   }
@@ -1793,12 +1880,16 @@ export default function App() {
       setTimeError(t("agenda.resourceRequired"));
       return;
     }
-    const starts = fromDateTimeLocalValue(calendarForm.starts_at);
-    const ends = fromDateTimeLocalValue(calendarForm.ends_at);
-    if (!starts || !ends) {
+    if (!calendarForm.day) {
       setTimeError(t("agenda.endsRequired"));
       return;
     }
+    const slot = UNAVAIL_SLOTS.find((s) => s.id === calendarForm.slot) ?? UNAVAIL_SLOTS[0];
+    const [y, m, d] = calendarForm.day.split("-").map(Number);
+    const startLocal = new Date(y, m - 1, d, slot.startHour, 0, 0, 0);
+    const endLocal = new Date(y, m - 1, d, slot.startHour + 4, 0, 0, 0);
+    const starts = startLocal.toISOString();
+    const ends = endLocal.toISOString();
     setTimeError(null);
     setAdminStatus(null);
     try {
@@ -1809,7 +1900,7 @@ export default function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          kind: calendarForm.kind,
+          kind: "unavailable",
           consultant_rate_id: calendarForm.consultant_rate_id,
           starts_at: starts,
           ends_at: ends,
@@ -1824,9 +1915,8 @@ export default function App() {
       setPlanningCalendar(false);
       setCalendarForm({
         consultant_rate_id: "",
-        kind: "pto",
-        starts_at: "",
-        ends_at: "",
+        day: "",
+        slot: "am",
         notes: "",
       });
       await Promise.all([loadResourceCalendar(), loadFinance()]);
@@ -1925,12 +2015,112 @@ export default function App() {
       : view;
   const overdueCount = invoiceAgenda.filter((a) => a.overdue).length;
   const weekKickoffs = kickoffAppointments.filter((a) => a.kind === "kickoff");
-  const weekCalendarBlocks = kickoffAppointments.filter(
-    (a) => a.kind === "pto" || a.kind === "unavailable",
-  );
   const resourceWeekBlocks = resourceCalendar.filter(
     (a) => a.kind === "pto" || a.kind === "unavailable" || a.kind === "kickoff",
   );
+  const resourceAgendaDates = DAY_KEYS.map((_, i) => toIsoDate(addDays(resourceCalendarWeek, i)));
+  const agendaResources = resources
+    .filter((r) => r.active)
+    .filter((r) => !agendaResourceId || r.id === agendaResourceId);
+  const openProjects = managedProjects.filter(
+    (p) =>
+      (p.progress || "none") !== "complete" &&
+      !["paid", "closed"].includes(p.funnel_status || ""),
+  );
+  const unpaidInvoices = invoices.filter((inv) => inv.status === "issued");
+  const filteredInvoices = invoices.filter((inv) => {
+    const q = invoiceSearch.q.trim().toLowerCase();
+    const idq = invoiceSearch.id.trim().toLowerCase();
+    const dateq = invoiceSearch.date.trim();
+    if (q && !inv.customer_name.toLowerCase().includes(q)) return false;
+    if (idq && !inv.invoice_number.toLowerCase().includes(idq) && !inv.id.toLowerCase().includes(idq))
+      return false;
+    if (dateq) {
+      const issued = (inv.issued_at || "").slice(0, 10);
+      if (issued !== dateq) return false;
+    }
+    return true;
+  });
+  const costMonthPrefix = costMonth;
+  const monthCompensation = compensation.filter((c) => {
+    if (!c.updated_at) return true;
+    return c.updated_at.startsWith(costMonthPrefix);
+  });
+  const billableMonthCost = monthCompensation
+    .filter((c) => c.classification !== "approved_non_billable")
+    .reduce((s, c) => s + c.hours * (c.rate_eur || 0), 0);
+  const nonBillableMonthCost = monthCompensation
+    .filter((c) => c.classification === "approved_non_billable")
+    .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
+  const hoursByResourceMonth = (() => {
+    const map = new Map<string, { name: string; billable: number; nonBillable: number }>();
+    for (const c of monthCompensation) {
+      const row = map.get(c.partner_id) || {
+        name: c.partner_name,
+        billable: 0,
+        nonBillable: 0,
+      };
+      if (c.classification === "approved_non_billable") row.nonBillable += c.hours;
+      else row.billable += c.hours;
+      map.set(c.partner_id, row);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const billedByQuarter = (() => {
+    const map = new Map<string, number>();
+    for (const inv of invoices.filter((i) => i.status === "issued" || i.status === "paid")) {
+      const d = (inv.issued_at || "").slice(0, 10);
+      if (!d) continue;
+      const y = Number(d.slice(0, 4));
+      const m = Number(d.slice(5, 7));
+      const q = Math.ceil(m / 3);
+      const key = `${y}-Q${q}`;
+      map.set(key, (map.get(key) || 0) + inv.subtotal_eur);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  })();
+  const billedAnnual = invoices
+    .filter((i) => i.status === "issued" || i.status === "paid")
+    .reduce((s, i) => s + i.subtotal_eur, 0);
+  const receivedTotal = invoices
+    .filter((i) => i.status === "paid")
+    .reduce((s, i) => s + i.amount_eur, 0);
+  const otherCostsTotal = supplierInvoices
+    .filter((s) => s.paid)
+    .reduce((s, row) => s + (Number(row.amount) || 0), 0);
+  const grossProfit =
+    invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.subtotal_eur, 0) -
+    nonBillableMonthCost -
+    otherCostsTotal;
+  const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
+  const profitAfterTax = grossProfit - projectedTax;
+  const vatThisQuarter =
+    vatAccount?.quarters.find((q) => q.label === vatAccount.current_quarter)?.outstanding_eur ?? 0;
+
+  function projectProfitStatus(p: ProjectDetail): {
+    spent: number;
+    sales: number;
+    status: "green" | "yellow" | "red";
+    pct: number;
+  } {
+    const hoursBooked = Math.max(0, (p.contracted_hours || 0) - (p.remaining_hours || 0));
+    const avgRate =
+      p.staffing.length > 0
+        ? p.staffing.reduce((s, st) => s + st.rate_eur, 0) / p.staffing.length
+        : 0;
+    const spent = hoursBooked * avgRate;
+    const risk =
+      p.risk_mode === "fixed" ? p.risk_fixed_eur : (p.fixed_price_eur * p.risk_rate) / 100;
+    const profit =
+      p.profit_mode === "fixed" ? p.profit_fixed_eur : (p.fixed_price_eur * p.profit_rate) / 100;
+    const sales = p.fixed_price_eur > 0 ? p.fixed_price_eur : spent + risk + profit;
+    const thresholdYellow = sales - risk - profit;
+    let status: "green" | "yellow" | "red" = "green";
+    if (spent > sales) status = "red";
+    else if (spent > thresholdYellow) status = "yellow";
+    const pct = sales > 0 ? Math.min(100, (spent / sales) * 100) : 0;
+    return { spent, sales, status, pct };
+  }
   const weekDateSet = new Set(weekDates);
   // Pending inbox is cross-week; approved list for refuse/reopen stays week-scoped.
   const submittedEntries = adminEntries.filter((e) => e.status === "submitted");
@@ -1938,7 +2128,8 @@ export default function App() {
     (e) => e.status === "approved" && weekDateSet.has(e.work_date),
   );
   const displayName = brand?.display_name ?? "Platform";
-  const rowLabel = (id: string) => rows.find((r) => r.id === id)?.label ?? id;
+  const rowLabel = (id: string) =>
+    rows.find((r) => r.id === id)?.label ?? projectLabels[id] ?? id;
   const whoLabel = (entry: TimeEntry) =>
     user && entry.partner_id === user.id ? t("time.you") : t("time.colleague");
 
@@ -1962,11 +2153,12 @@ export default function App() {
   function hoursInput(row: GridRow, date: string, dayIndex: number) {
     const key = `${row.id}|${date}`;
     const entry = entryByKey.get(key);
-    const locked = entry?.status === "approved" || entry?.status === "rejected";
+    const locked =
+      Boolean(row.readOnly) || entry?.status === "approved" || entry?.status === "rejected";
     const cellClass =
       entry?.status === "rejected"
         ? "hours-cell rejected"
-        : entry?.status === "approved"
+        : entry?.status === "approved" || row.readOnly
           ? "hours-cell approved"
           : "hours-cell";
     return (
@@ -1981,11 +2173,13 @@ export default function App() {
           disabled={locked}
           aria-busy={savingCell === key}
           title={
-            entry?.status === "rejected"
-              ? t("time.rejectedCell")
-              : entry?.status === "approved"
-                ? t("time.approvedCell")
-                : undefined
+            row.readOnly
+              ? t("time.historicalCell")
+              : entry?.status === "rejected"
+                ? t("time.rejectedCell")
+                : entry?.status === "approved"
+                  ? t("time.approvedCell")
+                  : undefined
           }
           onFocus={() => {
             if (locked) return;
@@ -2015,14 +2209,17 @@ export default function App() {
     );
   }
 
-  function projectRows(kind: "billable" | "non_billable") {
+  function projectRows(kind: "billable" | "non_billable", opts?: { historical?: boolean }) {
+    const historical = Boolean(opts?.historical);
     return rows
-      .filter((r) => r.classification === kind)
+      .filter((r) => r.classification === kind && Boolean(r.readOnly) === historical)
       .map((row) => (
-        <tr key={row.id}>
+        <tr key={row.id} className={row.readOnly ? "historical-row" : undefined}>
           <th scope="row">
             <span className="row-label">{row.label}</span>
-            {row.subtitle ? (
+            {row.readOnly ? (
+              <span className="row-sub">{t("time.historicalProject")}</span>
+            ) : row.subtitle ? (
               <span className="row-sub">{t("time.remaining", { hours: row.subtitle })}</span>
             ) : null}
           </th>
@@ -2178,8 +2375,17 @@ export default function App() {
           <main className="workspace">
             {activeView === "customers" ? (
               <section className="panel wide">
-                <h1>{t("customer.title")}</h1>
-                <p>{t("customer.intro")}</p>
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("customer.title")}</h1>
+                    <p>{t("customer.intro")}</p>
+                  </div>
+                  <div className="actions">
+                    <button type="button" className="primary" onClick={() => startCreateCustomer()}>
+                      {t("customer.add")}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="customer-search">
                   <label htmlFor="customerSearch">{t("customer.search")}</label>
@@ -2194,7 +2400,9 @@ export default function App() {
                     placeholder={t("customer.searchPlaceholder")}
                     autoComplete="off"
                   />
-                  {customerError ? <p className="status error">{customerError}</p> : null}
+                  {customerError && !creatingCustomer && !editingCustomerId ? (
+                    <p className="status error">{customerError}</p>
+                  ) : null}
                   {!customerQuery.trim() ? (
                     <p className="status">{t("customer.searchHint")}</p>
                   ) : customers.length === 0 ? (
@@ -2259,6 +2467,7 @@ export default function App() {
                   )}
                 </div>
 
+                {creatingCustomer || editingCustomerId ? (
                 <form className="customer-form" onSubmit={(e) => void saveCustomer(e)}>
                   <h2>{editingCustomerId ? t("customer.editTitle") : t("customer.addTitle")}</h2>
                   <fieldset className="fields-required">
@@ -2562,113 +2771,21 @@ export default function App() {
                     <button className="primary" type="submit">
                       {editingCustomerId ? t("customer.save") : t("customer.add")}
                     </button>
-                    {editingCustomerId ? (
-                      <button type="button" onClick={cancelEditCustomer}>
-                        {t("customer.cancel")}
-                      </button>
-                    ) : null}
+                    <button type="button" onClick={cancelEditCustomer}>
+                      {t("customer.cancel")}
+                    </button>
                   </div>
                   {customerError ? <p className="status error">{customerError}</p> : null}
                 </form>
+                ) : null}
               </section>
             ) : null}
 
             {activeView === "finance" && isManager ? (
               <>
                 <section className="panel wide">
-                  <h1>{t("finance.agendaTitle")}</h1>
-                  <p className="status">{t("agenda.weekIntro")}</p>
-                  <div className="actions week-actions">
-                    <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, -7))}>
-                      {t("time.prevWeek")}
-                    </button>
-                    <button type="button" onClick={() => setFinanceWeekStart(startOfIsoWeek(new Date()))}>
-                      {t("time.thisWeek")}
-                    </button>
-                    <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, 7))}>
-                      {t("time.nextWeek")}
-                    </button>
-                  </div>
-                  <p className="week-range">{formatWeekRange(financeWeekStart, i18n.language)}</p>
-                  {overdueCount > 0 ? (
-                    <p className="status error">{t("finance.overdueAlert", { count: overdueCount })}</p>
-                  ) : null}
-                  <h2>{t("agenda.kickoffsTitle")}</h2>
-                  {weekKickoffs.length === 0 ? (
-                    <p className="status">{t("agenda.kickoffsEmpty")}</p>
-                  ) : (
-                    <ul className="entry-list">
-                      {weekKickoffs.map((item) => (
-                        <li key={item.id}>
-                          <div>
-                            <strong>
-                              {t("agenda.kickoffLabel")} · {item.customer_name || "—"} · {item.project_name || "—"}
-                            </strong>
-                            <div className="muted">
-                              {new Date(item.starts_at).toLocaleString()} · {item.display_name} ·{" "}
-                              {item.duration_minutes}m
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <h2>{t("agenda.blocksTitle")}</h2>
-                  {weekCalendarBlocks.length === 0 ? (
-                    <p className="status">{t("agenda.blocksEmpty")}</p>
-                  ) : (
-                    <ul className="entry-list">
-                      {weekCalendarBlocks.map((item) => (
-                        <li key={item.id}>
-                          <div>
-                            <strong>
-                              {t(`agenda.kind.${item.kind}`)} · {item.display_name}
-                            </strong>
-                            <div className="muted">
-                              {new Date(item.starts_at).toLocaleString()} →{" "}
-                              {new Date(item.ends_at).toLocaleString()}
-                              {item.notes ? ` · ${item.notes}` : ""}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <h2>{t("finance.agendaInvoicesTitle")}</h2>
-                  {invoiceAgenda.length === 0 ? (
-                    <p className="status">{t("finance.agendaEmpty")}</p>
-                  ) : (
-                    <ul className="entry-list">
-                      {invoiceAgenda.map((item) => (
-                        <li key={item.invoice_id}>
-                          <div>
-                            <strong>
-                              {item.invoice_number} · {item.customer_name} · €{item.amount_eur.toFixed(2)}
-                            </strong>
-                            <div className={item.overdue ? "muted error" : "muted"}>
-                              {t("finance.dueLine", {
-                                date: item.due_date,
-                                days: item.days_until_due,
-                              })}
-                              {item.overdue ? ` · ${t("finance.overdue")}` : ""}
-                            </div>
-                          </div>
-                          <div className="entry-actions">
-                            {item.has_pdf ? (
-                              <button type="button" onClick={() => void downloadInvoicePdf(item.invoice_id)}>
-                                {t("finance.downloadPdf")}
-                              </button>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section className="panel wide">
-                  <h1>{t("finance.billingTitle")}</h1>
-                  <p>{t("finance.billingIntro")}</p>
+                  <h1>{t("finance.title")}</h1>
+                  <p>{t("finance.hubIntro")}</p>
                   {financeStatus ? <p className="status">{financeStatus}</p> : null}
                   {timeError ? <p className="status error">{timeError}</p> : null}
                   {companyProfile ? (
@@ -2680,158 +2797,590 @@ export default function App() {
                       })}
                     </p>
                   ) : null}
-                  {billingCandidates.length === 0 ? (
-                    <p className="status">{t("finance.billingEmpty")}</p>
-                  ) : (
-                    <ul className="entry-list">
-                      {billingCandidates.map((c) => (
-                        <li key={c.project_id}>
-                          <div>
-                            <strong>
-                              {c.customer_name} · {c.project_name}
-                            </strong>
-                            <div className="muted">
-                              €{c.fixed_price_eur} · {t(`finance.progress.${c.progress}`)}
-                              {c.report_url ? (
-                                <>
-                                  {" · "}
-                                  <a href={c.report_url} target="_blank" rel="noreferrer">
-                                    {t("finance.clientReport")}
-                                  </a>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="entry-actions">
-                            {c.actions.map((a) => (
-                              <button
-                                key={a.kind}
-                                type="button"
-                                className="primary"
-                                disabled={!a.enabled}
-                                onClick={() => void generateProjectInvoice(c.project_id, a.kind)}
-                              >
-                                {a.label}
-                                {a.amount_eur > 0 ? ` (€${a.amount_eur.toFixed(2)})` : ""}
-                              </button>
-                            ))}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <div className="finance-hub-actions">
+                    {(
+                      [
+                        ["operational", "finance.panelOperational"],
+                        ["billing", "finance.panelBilling"],
+                        ["costs", "finance.panelCosts"],
+                        ["kpis", "finance.panelKpis"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={financePanel === id ? "primary" : ""}
+                        onClick={() => setFinancePanel((p) => (p === id ? null : id))}
+                      >
+                        {t(label)}
+                      </button>
+                    ))}
+                  </div>
                 </section>
 
-                <section className="panel wide">
-                  <h2>{t("finance.invoices")}</h2>
-                  {invoices.length === 0 ? (
-                    <p className="status">{t("finance.invoicesEmpty")}</p>
-                  ) : (
-                    <ul className="entry-list">
-                      {invoices.map((inv) => (
-                        <li key={inv.id}>
-                          <div>
-                            <strong>
-                              {inv.invoice_number} · {inv.customer_name} · €{inv.amount_eur.toFixed(2)}
-                            </strong>
-                            <div className="muted">
-                              {inv.project_name} · {t(`finance.kind.${inv.kind}`, { defaultValue: inv.kind })} ·{" "}
-                              {t(`finance.status.${inv.status}`, { defaultValue: inv.status })}
-                              {inv.due_date ? ` · ${t("finance.due")} ${inv.due_date.slice(0, 10)}` : ""}
-                            </div>
-                            <div className="muted">
-                              {t("finance.invoiceParties", {
-                                seller: inv.seller_name || "—",
-                                buyer: inv.customer_name,
-                              })}
-                            </div>
-                            {inv.buyer_address ? (
-                              <div className="muted">{inv.buyer_address.replace(/\n/g, " · ")}</div>
-                            ) : (
-                              <div className="muted">{t("finance.buyerAddressMissing")}</div>
-                            )}
-                            {inv.lines?.map((line) => (
-                              <div key={line.id} className="muted">
-                                {line.description}: {line.quantity}
-                                {line.unit === "hour" ? "h" : ""} × €{line.unit_price_eur} = €
-                                {line.amount_eur.toFixed(2)}
+                {financePanel === "operational" ? (
+                  <section className="panel wide">
+                    <h2>{t("finance.operationalTitle")}</h2>
+                    <p className="status">{t("finance.operationalIntro")}</p>
+                    {openProjects.length === 0 ? (
+                      <p className="status">{t("finance.operationalEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {openProjects.map((p) => {
+                          const progressPct =
+                            p.progress === "complete"
+                              ? 100
+                              : p.progress === "none"
+                                ? 0
+                                : Number(p.progress) || 0;
+                          const budgetUsed =
+                            p.fixed_price_eur > 0
+                              ? Math.min(
+                                  100,
+                                  ((p.fixed_price_eur - (p.consultancy_budget_eur || 0)) /
+                                    p.fixed_price_eur) *
+                                    100,
+                                )
+                              : p.contracted_hours > 0
+                                ? Math.min(
+                                    100,
+                                    ((p.contracted_hours - p.remaining_hours) / p.contracted_hours) *
+                                      100,
+                                  )
+                                : 0;
+                          const withinBudget = p.remaining_hours >= 0 && budgetUsed <= 100;
+                          return (
+                            <li key={p.id}>
+                              <div className="finance-project-card">
+                                <strong>
+                                  {p.customer_name} · {p.name}
+                                </strong>
+                                <div className="muted">
+                                  {t(`project.funnel.${p.funnel_status || "registered"}`)} ·{" "}
+                                  {t(`finance.progress.${p.progress || "none"}`)} ·{" "}
+                                  {t("finance.projectedHours", { hours: p.remaining_hours })}
+                                </div>
+                                <div className="bar-track" aria-hidden>
+                                  <div
+                                    className={`bar-fill ${withinBudget ? "bar-ok" : "bar-warn"}`}
+                                    style={{ width: `${Math.min(100, Math.max(0, budgetUsed))}%` }}
+                                  />
+                                </div>
+                                <div className="muted">
+                                  {t("finance.budgetBar", {
+                                    pct: Math.round(progressPct),
+                                    used: Math.round(budgetUsed),
+                                  })}
+                                </div>
                               </div>
-                            ))}
-                            <div className="muted">
-                              {t("finance.vatLine", {
-                                subtotal: inv.subtotal_eur.toFixed(2),
-                                vat: inv.vat_eur.toFixed(2),
-                                rate: inv.vat_rate,
-                                total: inv.amount_eur.toFixed(2),
-                              })}
-                            </div>
-                          </div>
-                          <div className="entry-actions">
-                            {inv.status === "draft" ? (
-                              <>
-                                <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
-                                  {t("finance.sendInvoice")}
-                                </button>
-                                <button type="button" onClick={() => void deleteInvoice(inv.id, inv.invoice_number)}>
-                                  {t("finance.deleteInvoice")}
-                                </button>
-                              </>
-                            ) : null}
-                            {inv.status === "issued" ? (
-                              <>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+                ) : null}
+
+                {financePanel === "billing" ? (
+                  <>
+                    <section className="panel wide">
+                      <h2>{t("finance.billingTitle")}</h2>
+                      <p>{t("finance.billingIntro")}</p>
+                      <h3>{t("finance.readyToBill")}</h3>
+                      {billingCandidates.length === 0 ? (
+                        <p className="status">{t("finance.billingEmpty")}</p>
+                      ) : (
+                        <ul className="entry-list">
+                          {billingCandidates.map((c) => (
+                            <li key={c.project_id}>
+                              <div>
+                                <strong>
+                                  {c.customer_name} · {c.project_name}
+                                </strong>
+                                <div className="muted">
+                                  €{c.fixed_price_eur} · {t(`finance.progress.${c.progress}`)}
+                                  {c.report_url ? (
+                                    <>
+                                      {" · "}
+                                      <a href={c.report_url} target="_blank" rel="noreferrer">
+                                        {t("finance.clientReport")}
+                                      </a>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="entry-actions">
+                                {c.actions.map((a) => (
+                                  <button
+                                    key={a.kind}
+                                    type="button"
+                                    className="primary"
+                                    disabled={!a.enabled}
+                                    onClick={() => void generateProjectInvoice(c.project_id, a.kind)}
+                                  >
+                                    {a.label}
+                                    {a.amount_eur > 0 ? ` (€${a.amount_eur.toFixed(2)})` : ""}
+                                  </button>
+                                ))}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <h3>{t("finance.awaitingPayment")}</h3>
+                      {unpaidInvoices.length === 0 ? (
+                        <p className="status">{t("finance.awaitingPaymentEmpty")}</p>
+                      ) : (
+                        <ul className="entry-list">
+                          {unpaidInvoices.map((inv) => (
+                            <li key={inv.id}>
+                              <div>
+                                <strong>
+                                  {inv.invoice_number} · {inv.customer_name} · €
+                                  {inv.amount_eur.toFixed(2)}
+                                </strong>
+                                <div className="muted">
+                                  {inv.project_name}
+                                  {inv.due_date ? ` · ${t("finance.due")} ${inv.due_date.slice(0, 10)}` : ""}
+                                </div>
+                              </div>
+                              <div className="entry-actions">
                                 <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
                                   {t("finance.markPaid")}
-                                </button>
-                                <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "returned")}>
-                                  {t("finance.markReturned")}
                                 </button>
                                 {inv.pdf_path ? (
                                   <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
                                     {t("finance.downloadPdf")}
                                   </button>
                                 ) : null}
-                              </>
-                            ) : null}
-                            {inv.status === "paid" && inv.pdf_path ? (
-                              <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
-                                {t("finance.downloadPdf")}
-                              </button>
-                            ) : null}
-                            {inv.status === "returned" ? (
-                              <button type="button" onClick={() => void deleteInvoice(inv.id, inv.invoice_number)}>
-                                {t("finance.deleteInvoice")}
-                              </button>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
 
-                <section className="panel wide">
-                  <h2>{t("finance.internalTitle")}</h2>
-                  <p className="status">{t("finance.internalIntro")}</p>
-                  {reserve ? (
+                      <h3>{t("finance.invoiceSearchTitle")}</h3>
+                      <div className="form-row">
+                        <div>
+                          <label htmlFor="invSearchCustomer">{t("finance.searchCustomer")}</label>
+                          <input
+                            id="invSearchCustomer"
+                            value={invoiceSearch.q}
+                            onChange={(e) => setInvoiceSearch((p) => ({ ...p, q: e.target.value }))}
+                            placeholder={t("finance.searchCustomerHint")}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="invSearchDate">{t("finance.searchDate")}</label>
+                          <input
+                            id="invSearchDate"
+                            type="date"
+                            value={invoiceSearch.date}
+                            onChange={(e) => setInvoiceSearch((p) => ({ ...p, date: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <label htmlFor="invSearchId">{t("finance.searchId")}</label>
+                      <input
+                        id="invSearchId"
+                        value={invoiceSearch.id}
+                        onChange={(e) => setInvoiceSearch((p) => ({ ...p, id: e.target.value }))}
+                        placeholder="INV-…"
+                      />
+                      {filteredInvoices.length === 0 ? (
+                        <p className="status">{t("finance.invoicesEmpty")}</p>
+                      ) : (
+                        <ul className="entry-list">
+                          {filteredInvoices.map((inv) => (
+                            <li key={inv.id}>
+                              <div>
+                                <strong>
+                                  {inv.invoice_number} · {inv.customer_name} · €
+                                  {inv.amount_eur.toFixed(2)}
+                                </strong>
+                                <div className="muted">
+                                  {inv.project_name} ·{" "}
+                                  {t(`finance.kind.${inv.kind}`, { defaultValue: inv.kind })} ·{" "}
+                                  {t(`finance.status.${inv.status}`, { defaultValue: inv.status })}
+                                </div>
+                                <div className="muted">
+                                  {t("finance.vatLine", {
+                                    subtotal: inv.subtotal_eur.toFixed(2),
+                                    vat: inv.vat_eur.toFixed(2),
+                                    rate: inv.vat_rate,
+                                    total: inv.amount_eur.toFixed(2),
+                                  })}
+                                </div>
+                              </div>
+                              <div className="entry-actions">
+                                {inv.status === "draft" ? (
+                                  <>
+                                    <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "issued")}>
+                                      {t("finance.sendInvoice")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void deleteInvoice(inv.id, inv.invoice_number)}
+                                    >
+                                      {t("finance.deleteInvoice")}
+                                    </button>
+                                  </>
+                                ) : null}
+                                {inv.status === "issued" ? (
+                                  <>
+                                    <button type="button" onClick={() => void patchInvoiceStatus(inv.id, "paid")}>
+                                      {t("finance.markPaid")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void patchInvoiceStatus(inv.id, "returned")}
+                                    >
+                                      {t("finance.markReturned")}
+                                    </button>
+                                  </>
+                                ) : null}
+                                {inv.pdf_path ? (
+                                  <button type="button" onClick={() => void downloadInvoicePdf(inv.id)}>
+                                    {t("finance.downloadPdf")}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+
+                    <section className="panel wide">
+                      <h2>{t("finance.agendaTitle")}</h2>
+                      <div className="actions week-actions">
+                        <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, -7))}>
+                          {t("time.prevWeek")}
+                        </button>
+                        <button type="button" onClick={() => setFinanceWeekStart(startOfIsoWeek(new Date()))}>
+                          {t("time.thisWeek")}
+                        </button>
+                        <button type="button" onClick={() => setFinanceWeekStart((w) => addDays(w, 7))}>
+                          {t("time.nextWeek")}
+                        </button>
+                      </div>
+                      <p className="week-range">{formatWeekRange(financeWeekStart, i18n.language)}</p>
+                      {overdueCount > 0 ? (
+                        <p className="status error">{t("finance.overdueAlert", { count: overdueCount })}</p>
+                      ) : null}
+                      <h3>{t("agenda.kickoffsTitle")}</h3>
+                      {weekKickoffs.length === 0 ? (
+                        <p className="status">{t("agenda.kickoffsEmpty")}</p>
+                      ) : (
+                        <ul className="entry-list">
+                          {weekKickoffs.map((item) => (
+                            <li key={item.id}>
+                              <div>
+                                <strong>
+                                  {t("agenda.kickoffLabel")} · {item.customer_name || "—"} ·{" "}
+                                  {item.project_name || "—"}
+                                </strong>
+                                <div className="muted">
+                                  {new Date(item.starts_at).toLocaleString()} · {item.display_name}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <h3>{t("finance.agendaInvoicesTitle")}</h3>
+                      {invoiceAgenda.length === 0 ? (
+                        <p className="status">{t("finance.agendaEmpty")}</p>
+                      ) : (
+                        <ul className="entry-list">
+                          {invoiceAgenda.map((item) => (
+                            <li key={item.invoice_id}>
+                              <div>
+                                <strong>
+                                  {item.invoice_number} · {item.customer_name} · €
+                                  {item.amount_eur.toFixed(2)}
+                                </strong>
+                                <div className={item.overdue ? "muted error" : "muted"}>
+                                  {t("finance.dueLine", {
+                                    date: item.due_date,
+                                    days: item.days_until_due,
+                                  })}
+                                  {item.overdue ? ` · ${t("finance.overdue")}` : ""}
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  </>
+                ) : null}
+
+                {financePanel === "costs" ? (
+                  <section className="panel wide">
+                    <h2>{t("finance.costsTitle")}</h2>
+                    <label htmlFor="costMonth">{t("finance.costMonth")}</label>
+                    <input
+                      id="costMonth"
+                      type="month"
+                      value={costMonth}
+                      onChange={(e) => setCostMonth(e.target.value)}
+                    />
                     <p className="status">
-                      {t("finance.reserveLine", {
-                        current: reserve.current_reserve_eur.toFixed(2),
-                        target: reserve.target_eur.toFixed(2),
-                        surplus: reserve.surplus_eur.toFixed(2),
+                      {t("finance.costBillable", { eur: billableMonthCost.toFixed(2) })}
+                    </p>
+                    <p className="status">
+                      {t("finance.costNonBillable", { eur: nonBillableMonthCost.toFixed(2) })}
+                    </p>
+                    <h3>{t("finance.hoursByResource")}</h3>
+                    {hoursByResourceMonth.length === 0 ? (
+                      <p className="status">{t("finance.hoursByResourceEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {hoursByResourceMonth.map((row) => (
+                          <li key={row.name}>
+                            <div>
+                              <strong>{row.name}</strong>
+                              <div className="muted">
+                                {t("finance.resourceHoursLine", {
+                                  billable: row.billable,
+                                  nonBillable: row.nonBillable,
+                                })}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <h3>{t("finance.supplierInvoices")}</h3>
+                    <p className="status">{t("finance.supplierIntro")}</p>
+                    <div className="form-row">
+                      <div>
+                        <label htmlFor="supLabel">{t("finance.supplierLabel")}</label>
+                        <input
+                          id="supLabel"
+                          value={otherCostForm.label}
+                          onChange={(e) => setOtherCostForm((p) => ({ ...p, label: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="supAmount">{t("finance.supplierAmount")}</label>
+                        <input
+                          id="supAmount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={otherCostForm.amount}
+                          onChange={(e) => setOtherCostForm((p) => ({ ...p, amount: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                          if (!otherCostForm.label.trim() || !otherCostForm.amount.trim()) return;
+                          setSupplierInvoices((prev) => [
+                            ...prev,
+                            {
+                              id: crypto.randomUUID(),
+                              label: otherCostForm.label.trim(),
+                              amount: otherCostForm.amount,
+                              matched: false,
+                              paid: false,
+                            },
+                          ]);
+                          setOtherCostForm({ label: "", amount: "" });
+                        }}
+                      >
+                        {t("finance.addSupplierInvoice")}
+                      </button>
+                    </div>
+                    {supplierInvoices.length === 0 ? (
+                      <p className="status">{t("finance.supplierEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {supplierInvoices.map((row) => (
+                          <li key={row.id}>
+                            <div>
+                              <strong>
+                                {row.label} · €{Number(row.amount).toFixed(2)}
+                              </strong>
+                              <label className="checkbox-row">
+                                <input
+                                  type="checkbox"
+                                  checked={row.matched}
+                                  onChange={(e) =>
+                                    setSupplierInvoices((prev) =>
+                                      prev.map((x) =>
+                                        x.id === row.id ? { ...x, matched: e.target.checked } : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                                {t("finance.invoiceMatches")}
+                              </label>
+                              <label className="checkbox-row">
+                                <input
+                                  type="checkbox"
+                                  checked={row.paid}
+                                  onChange={(e) =>
+                                    setSupplierInvoices((prev) =>
+                                      prev.map((x) =>
+                                        x.id === row.id ? { ...x, paid: e.target.checked } : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                                {t("finance.invoicePayed")}
+                              </label>
+                              {row.matched && row.paid ? (
+                                <div className="muted">{t("finance.supplierCompleted")}</div>
+                              ) : null}
+                            </div>
+                            <div className="entry-actions">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSupplierInvoices((prev) => prev.filter((x) => x.id !== row.id))
+                                }
+                              >
+                                {t("customer.delete")}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <h3>{t("finance.compensation")}</h3>
+                    {compensation.length > 0 ? (
+                      <ul className="entry-list">
+                        {compensation.map((row) => (
+                          <li key={row.time_entry_id}>
+                            <div>
+                              <strong>{row.partner_name}</strong>
+                              <div className="muted">
+                                {t(
+                                  row.classification === "approved_non_billable"
+                                    ? "finance.compensationChargeback"
+                                    : "finance.compensationBillable",
+                                  {
+                                    hours: row.hours,
+                                    rate: row.rate_eur.toFixed(2),
+                                    eur: row.amount_eur.toFixed(2),
+                                  },
+                                )}
+                                {row.project_id ? ` · ${rowLabel(row.project_id)}` : ""}
+                              </div>
+                            </div>
+                            <div className="entry-actions">
+                              <button
+                                type="button"
+                                disabled={!row.can_undo}
+                                onClick={() => void undoCompensation(row.time_entry_id)}
+                              >
+                                {t("finance.compensationUndo")}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="status">{t("finance.compensationEmpty")}</p>
+                    )}
+                  </section>
+                ) : null}
+
+                {financePanel === "kpis" ? (
+                  <section className="panel wide">
+                    <h2>{t("finance.kpisTitle")}</h2>
+                    <h3>{t("finance.profitByProject")}</h3>
+                    {managedProjects.length === 0 ? (
+                      <p className="status">{t("finance.kpiEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {managedProjects.map((p) => {
+                          const { spent, sales, status, pct } = projectProfitStatus(p);
+                          return (
+                            <li key={p.id}>
+                              <div className="finance-project-card">
+                                <strong>
+                                  {p.customer_name} · {p.name}
+                                </strong>
+                                <div className="muted">
+                                  {t("finance.profitLine", {
+                                    spent: spent.toFixed(0),
+                                    sales: sales.toFixed(0),
+                                  })}
+                                </div>
+                                <div className="bar-track" aria-hidden>
+                                  <div
+                                    className={`bar-fill bar-${status}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    <h3>{t("finance.billedOverview")}</h3>
+                    {billedByQuarter.length === 0 ? (
+                      <p className="status">{t("finance.billedEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {billedByQuarter.map(([label, amount]) => (
+                          <li key={label}>
+                            <div>
+                              <strong>{label}</strong>
+                              <div className="muted">€{amount.toFixed(2)}</div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="status">
+                      {t("finance.billedAnnual", { eur: billedAnnual.toFixed(2) })}
+                    </p>
+                    <p className="status">
+                      {t("finance.receivedTotal", { eur: receivedTotal.toFixed(2) })}
+                    </p>
+                    <p className="status">
+                      {t("finance.grossProfit", { eur: grossProfit.toFixed(2) })}
+                    </p>
+                    <p className="status">
+                      {t("finance.projectedTax", {
+                        eur: projectedTax.toFixed(2),
+                        rate: Math.round(CORP_TAX_RATE * 1000) / 10,
                       })}
                     </p>
-                  ) : null}
-                  {vatAccount ? (
-                    <>
-                      <h3>{t("finance.vatAccount")}</h3>
-                      <p className="status">{t("finance.vatIntro")}</p>
+                    <p className="status">
+                      {t("finance.profitAfterTax", { eur: profitAfterTax.toFixed(2) })}
+                    </p>
+                    <p className="status">
+                      {t("finance.vatQuarterAmount", { eur: vatThisQuarter.toFixed(2) })}
+                    </p>
+                    {reserve ? (
                       <p className="status">
-                        {t("finance.vatBalance", {
-                          balance: vatAccount.balance_eur.toFixed(2),
-                          quarter: vatAccount.current_quarter,
+                        {t("finance.reserveLine", {
+                          current: reserve.current_reserve_eur.toFixed(2),
+                          target: reserve.target_eur.toFixed(2),
+                          surplus: reserve.surplus_eur.toFixed(2),
                         })}
                       </p>
-                      {vatAccount.quarters.some((q) => q.collected_eur > 0 || q.remitted_eur > 0) ? (
+                    ) : null}
+                    {vatAccount ? (
+                      <>
+                        <h3>{t("finance.vatAccount")}</h3>
+                        <p className="status">
+                          {t("finance.vatBalance", {
+                            balance: vatAccount.balance_eur.toFixed(2),
+                            quarter: vatAccount.current_quarter,
+                          })}
+                        </p>
                         <ul className="entry-list">
                           {vatAccount.quarters
                             .filter((q) => q.collected_eur > 0 || q.remitted_eur > 0)
@@ -2857,51 +3406,10 @@ export default function App() {
                               </li>
                             ))}
                         </ul>
-                      ) : (
-                        <p className="status">{t("finance.vatEmpty")}</p>
-                      )}
-                    </>
-                  ) : null}
-                  <h3>{t("finance.compensation")}</h3>
-                  {compensation.length > 0 ? (
-                    <ul className="entry-list">
-                      {compensation.map((row) => (
-                        <li key={row.time_entry_id}>
-                          <div>
-                            <strong>{row.partner_name}</strong>
-                            <div className="muted">
-                              {t(
-                                row.classification === "approved_non_billable"
-                                  ? "finance.compensationChargeback"
-                                  : "finance.compensationBillable",
-                                {
-                                  hours: row.hours,
-                                  rate: row.rate_eur.toFixed(2),
-                                  eur: row.amount_eur.toFixed(2),
-                                },
-                              )}
-                              {row.project_id ? ` · ${rowLabel(row.project_id)}` : ""}
-                            </div>
-                            {!row.can_undo ? (
-                              <div className="muted">{t("finance.compensationInvoiced")}</div>
-                            ) : null}
-                          </div>
-                          <div className="entry-actions">
-                            <button
-                              type="button"
-                              disabled={!row.can_undo}
-                              onClick={() => void undoCompensation(row.time_entry_id)}
-                            >
-                              {t("finance.compensationUndo")}
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="status">{t("finance.compensationEmpty")}</p>
-                  )}
-                </section>
+                      </>
+                    ) : null}
+                  </section>
+                ) : null}
               </>
             ) : null}
 
@@ -3102,27 +3610,135 @@ export default function App() {
                   </button>
                 </div>
                 <p className="week-range">{formatWeekRange(resourceCalendarWeek, i18n.language)}</p>
-                {resourceWeekBlocks.length === 0 ? (
-                  <p className="status">{t("agenda.resourceCalendarEmpty")}</p>
+                <label htmlFor="agendaResourceFilter">{t("agenda.filterResource")}</label>
+                <select
+                  id="agendaResourceFilter"
+                  value={agendaResourceId}
+                  onChange={(e) => setAgendaResourceId(e.target.value)}
+                >
+                  <option value="">{t("agenda.allResources")}</option>
+                  {resources
+                    .filter((r) => r.active)
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.display_name}
+                      </option>
+                    ))}
+                </select>
+                <div className="timesheet-scroll">
+                  <table className="timesheet-grid agenda-grid">
+                    <thead>
+                      <tr>
+                        <th scope="col">{t("agenda.resource")}</th>
+                        {DAY_KEYS.map((day, i) => (
+                          <th key={day} scope="col">
+                            <span className="day-name">{t(`time.days.${day}`)}</span>
+                            <span className="day-date">{resourceAgendaDates[i].slice(8)}</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agendaResources.length === 0 ? (
+                        <tr>
+                          <td colSpan={8}>
+                            <p className="status">{t("resources.empty")}</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        agendaResources.map((r) => (
+                          <tr key={r.id}>
+                            <th scope="row">
+                              <span className="row-label">{r.display_name}</span>
+                            </th>
+                            {resourceAgendaDates.map((date) => {
+                              const dayItems = resourceWeekBlocks.filter(
+                                (a) =>
+                                  a.consultant_rate_id === r.id &&
+                                  a.starts_at.slice(0, 10) === date,
+                              );
+                              return (
+                                <td key={date}>
+                                  {dayItems.length === 0 ? (
+                                    <span className="muted">—</span>
+                                  ) : (
+                                    <ul className="agenda-day-list">
+                                      {dayItems.map((item) => (
+                                        <li key={item.id}>
+                                          <strong>
+                                            {item.kind === "kickoff"
+                                              ? t("agenda.kind.kickoff")
+                                              : t("agenda.kind.unavailable")}
+                                          </strong>
+                                          <div className="muted">
+                                            {new Date(item.starts_at).toLocaleTimeString([], {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                            {"–"}
+                                            {new Date(item.ends_at).toLocaleTimeString([], {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })}
+                                          </div>
+                                          {item.project_name ? (
+                                            <div className="muted">{item.project_name}</div>
+                                          ) : null}
+                                          {item.kind !== "kickoff" ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void cancelCalendarBlock(item.id)}
+                                            >
+                                              {t("agenda.cancelBlock")}
+                                            </button>
+                                          ) : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <h2>{t("agenda.projectAgendaTitle")}</h2>
+                <p className="status">{t("agenda.projectAgendaIntro")}</p>
+                <label htmlFor="projectAgendaPick">{t("agenda.pickProject")}</label>
+                <select
+                  id="projectAgendaPick"
+                  value={projectAgendaId}
+                  onChange={(e) => setProjectAgendaId(e.target.value)}
+                >
+                  <option value="">{t("agenda.pickProject")}</option>
+                  {managedProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.customer_name} · {p.name}
+                    </option>
+                  ))}
+                </select>
+                {!projectAgendaId ? (
+                  <p className="status">{t("agenda.projectAgendaHint")}</p>
+                ) : projectAgenda.length === 0 ? (
+                  <p className="status">{t("agenda.projectAgendaEmpty")}</p>
                 ) : (
                   <ul className="entry-list">
-                    {resourceWeekBlocks.map((item) => (
+                    {projectAgenda.map((item) => (
                       <li key={item.id}>
                         <div>
                           <strong>
-                            {t(`agenda.kind.${item.kind}`)} · {item.display_name}
+                            {t(`agenda.kind.${item.kind === "pto" ? "unavailable" : item.kind}`)} ·{" "}
+                            {item.display_name}
                           </strong>
                           <div className="muted">
                             {new Date(item.starts_at).toLocaleString()} →{" "}
                             {new Date(item.ends_at).toLocaleString()}
-                            {item.project_name ? ` · ${item.project_name}` : ""}
                             {item.notes ? ` · ${item.notes}` : ""}
                           </div>
-                        </div>
-                        <div className="entry-actions">
-                          <button type="button" onClick={() => void cancelCalendarBlock(item.id)}>
-                            {t("agenda.cancelBlock")}
-                          </button>
                         </div>
                       </li>
                     ))}
@@ -3150,34 +3766,31 @@ export default function App() {
                           </option>
                         ))}
                     </select>
-                    <label htmlFor="calKind">{t("agenda.blockKind")}</label>
+                    <label htmlFor="calDay">{t("agenda.blockDay")}</label>
+                    <input
+                      id="calDay"
+                      type="date"
+                      value={calendarForm.day}
+                      onChange={(e) => setCalendarForm((p) => ({ ...p, day: e.target.value }))}
+                    />
+                    <label htmlFor="calSlot">{t("agenda.blockSlot")}</label>
                     <select
-                      id="calKind"
-                      value={calendarForm.kind}
+                      id="calSlot"
+                      value={calendarForm.slot}
                       onChange={(e) =>
                         setCalendarForm((p) => ({
                           ...p,
-                          kind: e.target.value === "unavailable" ? "unavailable" : "pto",
+                          slot: e.target.value as UnavailSlot,
                         }))
                       }
                     >
-                      <option value="pto">{t("agenda.kind.pto")}</option>
-                      <option value="unavailable">{t("agenda.kind.unavailable")}</option>
+                      {UNAVAIL_SLOTS.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {t(s.labelKey)}
+                        </option>
+                      ))}
                     </select>
-                    <label htmlFor="calStart">{t("agenda.startsAt")}</label>
-                    <input
-                      id="calStart"
-                      type="datetime-local"
-                      value={calendarForm.starts_at}
-                      onChange={(e) => setCalendarForm((p) => ({ ...p, starts_at: e.target.value }))}
-                    />
-                    <label htmlFor="calEnd">{t("agenda.endsAt")}</label>
-                    <input
-                      id="calEnd"
-                      type="datetime-local"
-                      value={calendarForm.ends_at}
-                      onChange={(e) => setCalendarForm((p) => ({ ...p, ends_at: e.target.value }))}
-                    />
+                    <p className="field-hint">{t("agenda.slotHint")}</p>
                     <label htmlFor="calNotes">{t("agenda.notes")}</label>
                     <input
                       id="calNotes"
@@ -3361,6 +3974,15 @@ export default function App() {
                         </tr>
                       )}
                       {projectRows("non_billable")}
+                      {rows.some((r) => r.readOnly) ? (
+                        <>
+                          <tr className="section-row">
+                            <td colSpan={8}>{t("time.historicalSection")}</td>
+                          </tr>
+                          {projectRows("billable", { historical: true })}
+                          {projectRows("non_billable", { historical: true })}
+                        </>
+                      ) : null}
                       <tr className="totals-row">
                         <th scope="row">{t("time.dayTotal")}</th>
                         {dayTotals.map((total, i) => (
