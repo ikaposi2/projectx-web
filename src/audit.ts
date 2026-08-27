@@ -18,10 +18,30 @@ type AuditUser = {
 };
 
 let auditUser: AuditUser | null = null;
+let auditSessionId: string | null = null;
 
 /** Attach authenticated user fields to subsequent UI audit events. */
 export function setAuditUser(user: AuditUser | null): void {
   auditUser = user;
+}
+
+/** Bind JWT `jti` as session.id for stitching UI + API audits. */
+export function setAuditSessionId(sessionId: string | null): void {
+  auditSessionId = sessionId;
+}
+
+/** Decode JWT payload (no verify) and return `jti` when present. */
+export function sessionIdFromToken(token: string | null | undefined): string | null {
+  if (!token) return null;
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(json) as { jti?: string };
+    return typeof payload.jti === "string" && payload.jti ? payload.jti : null;
+  } catch {
+    return null;
+  }
 }
 
 function asList(value: string | string[] | undefined, fallback: string[]): string[] {
@@ -61,6 +81,7 @@ export function audit(action: string, options: AuditOptions): void {
   if (auditUser?.full_name) attributes["user.name"] = auditUser.full_name;
   if (auditUser?.role) attributes["user.roles"] = auditUser.role;
   if (auditUser?.tenant_id) attributes["organization.id"] = auditUser.tenant_id;
+  if (auditSessionId) attributes["session.id"] = auditSessionId;
 
   for (const [key, value] of Object.entries(rest)) {
     if (value == null) continue;

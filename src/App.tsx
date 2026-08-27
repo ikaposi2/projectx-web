@@ -5,6 +5,8 @@ import {
   auditUiLogin,
   auditUiLogout,
   auditUiView,
+  sessionIdFromToken,
+  setAuditSessionId,
   setAuditUser,
 } from "./audit";
 
@@ -1223,8 +1225,10 @@ export default function App() {
     if (!token) {
       setUser(null);
       setAuditUser(null);
+      setAuditSessionId(null);
       return;
     }
+    setAuditSessionId(sessionIdFromToken(token));
     void fetch(`${API}/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -1240,6 +1244,7 @@ export default function App() {
         localStorage.removeItem("projectx.token");
         setToken(null);
         setAuditUser(null);
+        setAuditSessionId(null);
       });
   }, [token]);
 
@@ -1753,6 +1758,7 @@ export default function App() {
       }
       const data = (await res.json()) as { access_token: string };
       localStorage.setItem("projectx.token", data.access_token);
+      setAuditSessionId(sessionIdFromToken(data.access_token));
       setToken(data.access_token);
       if (mode === "login") {
         auditUiLogin("success", { "user.email": email.trim().toLowerCase() });
@@ -1768,6 +1774,7 @@ export default function App() {
   function logout() {
     auditUiLogout();
     setAuditUser(null);
+    setAuditSessionId(null);
     localStorage.removeItem("projectx.token");
     setToken(null);
     setUser(null);
