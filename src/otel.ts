@@ -24,6 +24,12 @@ function deploymentEnvironment(): string {
   );
 }
 
+function peerServiceFromPath(pathname: string): string | undefined {
+  const match = pathname.match(/^\/api\/(identity|time|project|partner|customer|catalog|finance)(?:\/|$)/);
+  if (!match) return undefined;
+  return `projectX-${match[1]}`;
+}
+
 /**
  * Boot browser OpenTelemetry to same-origin `/otel/`.
  * - Traces (`/otel/v1/traces`): page load + fetch spans (APM service map).
@@ -79,6 +85,15 @@ export function initOtel(): void {
         ignoreUrls: [/\/otel\//],
         propagateTraceHeaderCorsUrls: [/.*/],
         clearTimingResources: true,
+        applyCustomAttributesOnSpan(span, request) {
+          try {
+            const raw = typeof request === "string" ? request : request.url;
+            const peer = peerServiceFromPath(new URL(raw, window.location.origin).pathname);
+            if (peer) span.setAttribute("peer.service", peer);
+          } catch {
+            /* ignore */
+          }
+        },
       }),
     ],
   });
