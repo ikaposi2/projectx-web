@@ -24,7 +24,11 @@ function deploymentEnvironment(): string {
   );
 }
 
-/** Boot browser OpenTelemetry (traces + logs) to same-origin `/otel/`. */
+/**
+ * Boot browser OpenTelemetry to same-origin `/otel/`.
+ * - Traces (`/otel/v1/traces`): page load + fetch spans (APM service map).
+ * - Logs (`/otel/v1/logs`): UI audit events only (`audit.ts`); not traces.
+ */
 export function initOtel(): void {
   if (started || typeof window === "undefined") return;
   started = true;

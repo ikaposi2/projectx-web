@@ -42,6 +42,8 @@ export function audit(action: string, options: AuditOptions): void {
   );
 
   const attributes: Record<string, string | number | boolean | string[]> = {
+    "ecs.version": "8.11.0",
+    "event.dataset": "projectX-web.audit",
     "event.kind": "event",
     "event.action": action,
     "event.outcome": outcome,
@@ -73,11 +75,18 @@ export function audit(action: string, options: AuditOptions): void {
     // never break UI on audit failure
   }
 
-  // Structured console mirror (helps local/dev; Elastic still gets OTLP).
-  try {
-    console.info("[audit]", body, attributes);
-  } catch {
-    /* ignore */
+  // Dev-only mirror; production telemetry is OTLP logs (/otel/v1/logs), not traces.
+  const env = import.meta.env as Record<string, string | undefined>;
+  const isDev =
+    env.DEV === "true" ||
+    env.MODE === "development" ||
+    env.VITE_ENVIRONMENT === "dev";
+  if (isDev) {
+    try {
+      console.info("[audit]", body, attributes);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
