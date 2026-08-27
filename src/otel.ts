@@ -87,8 +87,15 @@ export function initOtel(): void {
         clearTimingResources: true,
         applyCustomAttributesOnSpan(span, request) {
           try {
-            const raw = typeof request === "string" ? request : request.url;
-            const peer = peerServiceFromPath(new URL(raw, window.location.origin).pathname);
+            let pathname: string;
+            if (typeof request === "string") {
+              pathname = new URL(request, window.location.origin).pathname;
+            } else if (request instanceof Request) {
+              pathname = new URL(request.url).pathname;
+            } else {
+              return;
+            }
+            const peer = peerServiceFromPath(pathname);
             if (peer) span.setAttribute("peer.service", peer);
           } catch {
             /* ignore */
