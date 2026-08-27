@@ -11,6 +11,8 @@ import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { logs } from "@opentelemetry/api-logs";
 
 let started = false;
+let tracerProvider: WebTracerProvider | undefined;
+let loggerProvider: LoggerProvider | undefined;
 
 function deploymentEnvironment(): string {
   const env = import.meta.env as Record<string, string | undefined>;
@@ -33,7 +35,7 @@ export function initOtel(): void {
     "deployment.environment": deploymentEnvironment(),
   });
 
-  const tracerProvider = new WebTracerProvider({
+  tracerProvider = new WebTracerProvider({
     resource,
     spanProcessors: [
       new BatchSpanProcessor(
@@ -47,7 +49,7 @@ export function initOtel(): void {
     contextManager: new ZoneContextManager(),
   });
 
-  const loggerProvider = new LoggerProvider({
+  loggerProvider = new LoggerProvider({
     resource,
     processors: [
       new BatchLogRecordProcessor({
@@ -58,6 +60,13 @@ export function initOtel(): void {
     ],
   });
   logs.setGlobalLoggerProvider(loggerProvider);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      void tracerProvider?.forceFlush();
+      void loggerProvider?.forceFlush();
+    }
+  });
 
   registerInstrumentations({
     instrumentations: [
