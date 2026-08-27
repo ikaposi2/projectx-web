@@ -29,9 +29,14 @@ function asList(value: string | string[] | undefined, fallback: string[]): strin
   return typeof value === "string" ? [value] : value;
 }
 
+function scalar(value: string | number | boolean | string[]): string | number | boolean {
+  if (Array.isArray(value)) return value.join(",");
+  return value;
+}
+
 /**
  * Emit an ECS-shaped UI audit log via OpenTelemetry logs (OTLP).
- * Attributes use dotted ECS names (event.action, user.id, …).
+ * Body is a one-line message (Elastic `body.text`); ECS fields are scalar attributes.
  */
 export function audit(action: string, options: AuditOptions): void {
   const { outcome, category, eventType, message, ...rest } = options;
@@ -41,29 +46,29 @@ export function audit(action: string, options: AuditOptions): void {
     outcome === "failure" ? ["error"] : ["info"],
   );
 
-  const attributes: Record<string, string | number | boolean | string[]> = {
+  const attributes: Record<string, string | number | boolean> = {
     "ecs.version": "8.11.0",
     "event.dataset": "projectX-web.audit",
     "event.kind": "event",
     "event.action": action,
     "event.outcome": outcome,
-    "event.category": cats,
-    "event.type": types,
+    "event.category": cats.join(","),
+    "event.type": types.join(","),
   };
 
   if (auditUser?.id) attributes["user.id"] = auditUser.id;
   if (auditUser?.email) attributes["user.email"] = auditUser.email;
   if (auditUser?.full_name) attributes["user.name"] = auditUser.full_name;
-  if (auditUser?.role) attributes["user.roles"] = [auditUser.role];
+  if (auditUser?.role) attributes["user.roles"] = auditUser.role;
   if (auditUser?.tenant_id) attributes["organization.id"] = auditUser.tenant_id;
 
   for (const [key, value] of Object.entries(rest)) {
     if (value == null) continue;
     const ecsKey = key.includes(".") ? key : key.replace(/_/g, ".");
-    attributes[ecsKey] = value;
+    attributes[ecsKey] = scalar(value);
   }
 
-  const body = message || action;
+  const body = message || `${action} ${outcome}`;
   try {
     logs.getLogger("projectx.audit").emit({
       severityNumber: outcome === "failure" ? SeverityNumber.WARN : SeverityNumber.INFO,
@@ -73,20 +78,6 @@ export function audit(action: string, options: AuditOptions): void {
     });
   } catch {
     // never break UI on audit failure
-  }
-
-  // Dev-only mirror; production telemetry is OTLP logs (/otel/v1/logs), not traces.
-  const env = import.meta.env as Record<string, string | undefined>;
-  const isDev =
-    env.DEV === "true" ||
-    env.MODE === "development" ||
-    env.VITE_ENVIRONMENT === "dev";
-  if (isDev) {
-    try {
-      console.info("[audit]", body, attributes);
-    } catch {
-      /* ignore */
-    }
   }
 }
 

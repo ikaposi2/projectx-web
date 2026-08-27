@@ -2,7 +2,6 @@ import { ZoneContextManager } from "@opentelemetry/context-zone";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
-import { DocumentLoadInstrumentation } from "@opentelemetry/instrumentation-document-load";
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
@@ -16,12 +15,8 @@ let loggerProvider: LoggerProvider | undefined;
 
 function deploymentEnvironment(): string {
   const env = import.meta.env as Record<string, string | undefined>;
-  return (
-    env.VITE_DEPLOYMENT_ENVIRONMENT ||
-    env.VITE_ENVIRONMENT ||
-    env.MODE ||
-    "dev"
-  );
+  // Never use Vite MODE (production/development) — Elastic treats that as the env name.
+  return env.VITE_DEPLOYMENT_ENVIRONMENT || env.VITE_ENVIRONMENT || "dev";
 }
 
 function peerServiceFromPath(pathname: string): string | undefined {
@@ -32,8 +27,8 @@ function peerServiceFromPath(pathname: string): string | undefined {
 
 /**
  * Boot browser OpenTelemetry to same-origin `/otel/`.
- * - Traces (`/otel/v1/traces`): page load + fetch spans (APM service map).
- * - Logs (`/otel/v1/logs`): UI audit events only (`audit.ts`); not traces.
+ * - Traces (`/otel/v1/traces`): API fetch spans only (service map).
+ * - Logs (`/otel/v1/logs`): UI audit events only (`audit.ts`).
  */
 export function initOtel(): void {
   if (started || typeof window === "undefined") return;
@@ -80,9 +75,12 @@ export function initOtel(): void {
 
   registerInstrumentations({
     instrumentations: [
-      new DocumentLoadInstrumentation(),
       new FetchInstrumentation({
-        ignoreUrls: [/\/otel\//],
+        ignoreUrls: [
+          /\/otel\//,
+          /\/health(?:\?|$)/,
+          /\/brand(?:\?|$)/,
+        ],
         propagateTraceHeaderCorsUrls: [/.*/],
         clearTimingResources: true,
         applyCustomAttributesOnSpan(span, request) {
