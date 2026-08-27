@@ -9,6 +9,12 @@ import {
   setAuditSessionId,
   setAuditUser,
 } from "./audit";
+import {
+  CatalogContentEditor,
+  contentFromDefinition,
+  emptyCatalogContent,
+  type CatalogContentState,
+} from "./components/CatalogContentEditor";
 
 type Brand = {
   display_name: string;
@@ -1052,13 +1058,17 @@ export default function App() {
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
   const [creatingCatalog, setCreatingCatalog] = useState(false);
-  const [catalogForm, setCatalogForm] = useState({ list_price_eur: "", estimated_hours: "", name_en: "" });
+  const [catalogForm, setCatalogForm] = useState({
+    list_price_eur: "",
+    estimated_hours: "",
+    ...emptyCatalogContent(),
+  });
   const [newCatalogForm, setNewCatalogForm] = useState({
     service_id: "",
     version: "1.0.0",
-    name_en: "",
     list_price_eur: "",
     estimated_hours: "",
+    ...emptyCatalogContent(),
   });
   const [resources, setResources] = useState<Resource[]>([]);
   const [tenantUserIds, setTenantUserIds] = useState<Set<string>>(() => new Set());
@@ -2710,6 +2720,10 @@ export default function App() {
     setAdminStatus(null);
     const listPrice = Number(catalogForm.list_price_eur);
     const estimatedHours = Number(catalogForm.estimated_hours);
+    if (!catalogForm.name_en.trim() && !catalogForm.name_nl.trim()) {
+      setTimeError(t("catalog.missingRequired"));
+      return;
+    }
     if (!Number.isFinite(listPrice) || listPrice < 0) {
       setTimeError(t("catalog.invalidPrice"));
       return;
@@ -2730,7 +2744,12 @@ export default function App() {
           body: JSON.stringify({
             list_price_eur: listPrice,
             estimated_hours: estimatedHours,
-            name_en: catalogForm.name_en.trim() || undefined,
+            name_en: catalogForm.name_en.trim() || catalogForm.name_nl.trim(),
+            name_nl: catalogForm.name_nl.trim() || catalogForm.name_en.trim(),
+            description_en: catalogForm.description_en,
+            description_nl: catalogForm.description_nl,
+            prerequisites: catalogForm.prerequisites,
+            deliverables: catalogForm.deliverables,
           }),
         },
       );
@@ -2750,7 +2769,7 @@ export default function App() {
     const listPrice = Number(newCatalogForm.list_price_eur);
     const estimatedHours = Number(newCatalogForm.estimated_hours);
     const serviceId = newCatalogForm.service_id.trim();
-    const nameEn = newCatalogForm.name_en.trim();
+    const nameEn = newCatalogForm.name_en.trim() || newCatalogForm.name_nl.trim();
     if (!serviceId || !nameEn) {
       setTimeError(t("catalog.missingRequired"));
       return;
@@ -2774,8 +2793,13 @@ export default function App() {
           service_id: serviceId,
           version: newCatalogForm.version.trim() || "1.0.0",
           name_en: nameEn,
+          name_nl: newCatalogForm.name_nl.trim() || nameEn,
           list_price_eur: listPrice,
           estimated_hours: estimatedHours,
+          description_en: newCatalogForm.description_en,
+          description_nl: newCatalogForm.description_nl,
+          prerequisites: newCatalogForm.prerequisites,
+          deliverables: newCatalogForm.deliverables,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -2784,12 +2808,41 @@ export default function App() {
       setNewCatalogForm({
         service_id: "",
         version: "1.0.0",
-        name_en: "",
         list_price_eur: "",
         estimated_hours: "",
+        ...emptyCatalogContent(),
       });
       await loadCatalog();
     } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function openEditCatalog(serviceId: string, version: string) {
+    if (!token) return;
+    setTimeError(null);
+    setCreatingCatalog(false);
+    setEditingCatalogId(`${serviceId}|${version}`);
+    try {
+      const res = await fetch(
+        `${CATALOG_API}/services/${serviceId}?version=${encodeURIComponent(version)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const detail = (await res.json()) as {
+        definition?: Record<string, unknown>;
+        list_price_eur?: number;
+      };
+      const content = contentFromDefinition(detail.definition);
+      const billing = detail.definition?.billing as { list_price?: number } | undefined;
+      const effort = detail.definition?.estimated_effort as { typical?: number } | undefined;
+      setCatalogForm({
+        list_price_eur: String(billing?.list_price ?? ""),
+        estimated_hours: String(effort?.typical ?? ""),
+        ...content,
+      });
+    } catch (err) {
+      setEditingCatalogId(null);
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }
@@ -5562,6 +5615,13 @@ export default function App() {
                       onClick={() => {
                         setCreatingCatalog(true);
                         setEditingCatalogId(null);
+                        setNewCatalogForm({
+                          service_id: "",
+                          version: "1.0.0",
+                          list_price_eur: "",
+                          estimated_hours: "",
+                          ...emptyCatalogContent(),
+                        });
                       }}
                     >
                       {t("catalog.add")}
@@ -5585,12 +5645,6 @@ export default function App() {
                       value={newCatalogForm.version}
                       onChange={(e) => setNewCatalogForm((p) => ({ ...p, version: e.target.value }))}
                     />
-                    <label htmlFor="catNewName">{t("catalog.name")}</label>
-                    <input
-                      id="catNewName"
-                      value={newCatalogForm.name_en}
-                      onChange={(e) => setNewCatalogForm((p) => ({ ...p, name_en: e.target.value }))}
-                    />
                     <label htmlFor="catNewPrice">{t("catalog.listPrice")}</label>
                     <input
                       id="catNewPrice"
@@ -5609,6 +5663,18 @@ export default function App() {
                       value={newCatalogForm.estimated_hours}
                       onChange={(e) => setNewCatalogForm((p) => ({ ...p, estimated_hours: e.target.value }))}
                     />
+                    {token ? (
+                      <CatalogContentEditor
+                        value={newCatalogForm}
+                        onChange={(content: CatalogContentState) =>
+                          setNewCatalogForm((p) => ({ ...p, ...content }))
+                        }
+                        token={token}
+                        catalogApi={CATALOG_API}
+                        onStatus={setAdminStatus}
+                        onError={setTimeError}
+                      />
+                    ) : null}
                     <div className="actions">
                       <button type="button" className="primary" onClick={() => void createCatalogService()}>
                         {t("catalog.create")}
@@ -5626,7 +5692,7 @@ export default function App() {
                     {catalogServices.map((s) => (
                       <li key={`${s.service_id}-${s.version}`}>
                         <div>
-                          <strong>{s.name.en || s.service_id}</strong>
+                          <strong>{s.name.en || s.name.nl || s.service_id}</strong>
                           <div className="muted">
                             {s.service_id} v{s.version} · {s.estimated_hours ?? "—"}h · €
                             {s.list_price_eur?.toLocaleString() ?? "—"}
@@ -5635,15 +5701,7 @@ export default function App() {
                         <div className="entry-actions">
                           <button
                             type="button"
-                            onClick={() => {
-                              setCreatingCatalog(false);
-                              setEditingCatalogId(`${s.service_id}|${s.version}`);
-                              setCatalogForm({
-                                name_en: s.name.en || "",
-                                list_price_eur: String(s.list_price_eur ?? ""),
-                                estimated_hours: String(s.estimated_hours ?? ""),
-                              });
-                            }}
+                            onClick={() => void openEditCatalog(s.service_id, s.version)}
                           >
                             {t("catalog.edit")}
                           </button>
@@ -5661,12 +5719,6 @@ export default function App() {
                 {editingCatalogId ? (
                   <div className="customer-form">
                     <h2>{t("catalog.editTitle")}</h2>
-                    <label htmlFor="catName">{t("catalog.name")}</label>
-                    <input
-                      id="catName"
-                      value={catalogForm.name_en}
-                      onChange={(e) => setCatalogForm((p) => ({ ...p, name_en: e.target.value }))}
-                    />
                     <label htmlFor="catPrice">{t("catalog.listPrice")}</label>
                     <input
                       id="catPrice"
@@ -5685,6 +5737,18 @@ export default function App() {
                       value={catalogForm.estimated_hours}
                       onChange={(e) => setCatalogForm((p) => ({ ...p, estimated_hours: e.target.value }))}
                     />
+                    {token ? (
+                      <CatalogContentEditor
+                        value={catalogForm}
+                        onChange={(content: CatalogContentState) =>
+                          setCatalogForm((p) => ({ ...p, ...content }))
+                        }
+                        token={token}
+                        catalogApi={CATALOG_API}
+                        onStatus={setAdminStatus}
+                        onError={setTimeError}
+                      />
+                    ) : null}
                     <div className="actions">
                       <button
                         type="button"
