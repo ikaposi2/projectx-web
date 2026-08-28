@@ -24,7 +24,25 @@
     "catalog": "Catalog",
     "resources": "Resources",
     "customers": "Customers",
-    "reporting": "Reporting"
+    "reporting": "Reporting",
+    "system": "System",
+    "systemStatus": "Microservice status"
+  },
+  "system": {
+    "statusTitle": "Microservice status",
+    "intro": "Live health check for each backend service.",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "lastChecked": "Last checked: {{time}}",
+    "services": {
+      "identity": "Identity",
+      "time": "Time",
+      "project": "Project",
+      "partner": "Partner",
+      "customer": "Customer",
+      "catalog": "Catalog",
+      "finance": "Finance"
+    }
   },
   "home": {
     "title": "How work flows",

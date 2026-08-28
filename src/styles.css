@@ -217,6 +217,174 @@ body {
   color: #102033;
 }
 
+.nav-group {
+  margin-top: 0.45rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.nav-group-label.nav-item {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+  padding: 0.35rem 0.65rem;
+  pointer-events: none;
+}
+
+.app-body:not(.nav-collapsed) .nav-group-label.nav-item:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
+.app-body.nav-collapsed .nav-subitem {
+  display: none;
+}
+
+.app-body.nav-collapsed .nav-group-label.nav-item {
+  pointer-events: auto;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  font-weight: inherit;
+  color: var(--text);
+  justify-content: center;
+  padding: 0.65rem;
+}
+
+.app-body.nav-collapsed .nav-group-label.nav-item.active {
+  background: var(--brand-accent);
+  color: #102033;
+}
+
+.nav-subitem {
+  padding-left: 1.35rem;
+}
+
+.login-service-status {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.login-service-status-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.service-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.55rem;
+}
+
+.service-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--input-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.service-card.ok {
+  border-color: rgba(92, 186, 138, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(92, 186, 138, 0.12);
+}
+
+.service-card.down {
+  border-color: rgba(224, 112, 112, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(224, 112, 112, 0.12);
+}
+
+.service-card.pending {
+  opacity: 0.75;
+}
+
+.service-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.55rem;
+  background: var(--brand-accent-soft);
+  color: var(--brand-primary);
+  flex: 0 0 auto;
+}
+
+.service-card-icon .nav-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.service-card.down .service-card-icon {
+  background: rgba(224, 112, 112, 0.15);
+  color: var(--danger);
+}
+
+.service-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.service-card-body strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.service-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+
+.service-status-pill.ok {
+  color: var(--ok);
+}
+
+.service-status-pill.down {
+  color: var(--danger);
+}
+
+.service-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.service-status-pill.ok .service-status-dot {
+  box-shadow: 0 0 0 2px rgba(92, 186, 138, 0.25);
+}
+
+.service-status-pill.down .service-status-dot {
+  box-shadow: 0 0 0 2px rgba(224, 112, 112, 0.25);
+}
+
 .flow-step .flow-badge {
   position: absolute;
   top: 0.45rem;

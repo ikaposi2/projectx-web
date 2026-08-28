@@ -368,7 +368,8 @@ type AppView =
   | "projects"
   | "resources"
   | "unavailable"
-  | "planning";
+  | "planning"
+  | "systemStatus";
 type FinancePanel = "operational" | "billing" | "costs" | "kpis" | "funnel" | null;
 type KpiHorizon = "monthly" | "quarterly" | "annually";
 type NavIconName =
@@ -389,7 +390,9 @@ type NavIconName =
   | "flowHours"
   | "flowApprove"
   | "flowClose"
-  | "flowBill";
+  | "flowBill"
+  | "system"
+  | "status";
 
 type ReportSummary = {
   from_date: string;
@@ -535,6 +538,19 @@ function NavIcon({ name }: { name: NavIconName }) {
           <path d="M4 7h16M4 12h16M4 17h16" />
         </svg>
       );
+    case "system":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+        </svg>
+      );
+    case "status":
+      return (
+        <svg {...common}>
+          <path d="M4 12h2l2-5 4 10 2-5h6" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -660,6 +676,77 @@ const PARTNER_API = "/api/partner";
 const CUSTOMER_API = "/api/customer";
 const FINANCE_API = "/api/finance";
 const CATALOG_API = "/api/catalog";
+
+type ServiceHealthState = {
+  status: string;
+  service?: string;
+};
+
+const MICROSERVICES = [
+  { key: "identity", api: API, icon: "flowConfig" as const, labelKey: "system.services.identity" },
+  { key: "time", api: TIME_API, icon: "hours" as const, labelKey: "system.services.time" },
+  { key: "project", api: PROJECT_API, icon: "projects" as const, labelKey: "system.services.project" },
+  { key: "partner", api: PARTNER_API, icon: "resources" as const, labelKey: "system.services.partner" },
+  { key: "customer", api: CUSTOMER_API, icon: "customers" as const, labelKey: "system.services.customer" },
+  { key: "catalog", api: CATALOG_API, icon: "catalog" as const, labelKey: "system.services.catalog" },
+  { key: "finance", api: FINANCE_API, icon: "finance" as const, labelKey: "system.services.finance" },
+] as const;
+
+async function fetchAllServiceHealth(): Promise<Record<string, ServiceHealthState>> {
+  const entries = await Promise.all(
+    MICROSERVICES.map(async ({ key, api }) => {
+      try {
+        const response = await fetch(`${api}/health`);
+        const payload = await response.json();
+        return [key, { status: payload.status ?? "ok", service: payload.service }] as const;
+      } catch {
+        return [key, { status: "offline" }] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+function ServiceHealthGrid({
+  health,
+  label,
+  compact,
+}: {
+  health: Record<string, ServiceHealthState>;
+  label: (key: string) => string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={compact ? "service-grid compact" : "service-grid"}
+      aria-label={label("system.statusTitle")}
+    >
+      {MICROSERVICES.map(({ key, icon, labelKey }) => {
+        const entry = health[key];
+        const ok = entry?.status === "ok";
+        const offline = entry?.status === "offline";
+        const pending = !entry;
+        return (
+          <article
+            key={key}
+            className={`service-card${ok ? " ok" : ""}${offline ? " down" : ""}${pending ? " pending" : ""}`}
+          >
+            <div className="service-card-icon" aria-hidden="true">
+              <NavIcon name={icon} />
+            </div>
+            <div className="service-card-body">
+              <strong>{label(labelKey)}</strong>
+              <span className={`service-status-pill ${ok ? "ok" : offline ? "down" : "unknown"}`}>
+                <span className="service-status-dot" />
+                {pending ? "…" : entry.status}
+              </span>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
 
 type Customer = {
   id: string;
@@ -953,8 +1040,9 @@ function isoInMonths(iso: string | null | undefined, months: string[]): boolean 
 export default function App() {
   const { t, i18n } = useTranslation();
   const [brand, setBrand] = useState<Brand | null>(null);
-  const [health, setHealth] = useState<string>("…");
-  const [timeHealth, setTimeHealth] = useState<string>("…");
+  const [serviceHealth, setServiceHealth] = useState<Record<string, ServiceHealthState>>({});
+  const [serviceHealthCheckedAt, setServiceHealthCheckedAt] = useState<string | null>(null);
+  const [serviceHealthRefreshing, setServiceHealthRefreshing] = useState(false);
   const [token, setToken] = useState<string | null>(localStorage.getItem("projectx.token"));
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -1220,16 +1308,22 @@ export default function App() {
       })
       .catch(() => setBrand({ display_name: "Platform", default_locale: "nl", logo_url: null }));
 
-    void fetch(`${API}/health`)
-      .then((r) => r.json())
-      .then((h) => setHealth(h.status ?? "ok"))
-      .catch(() => setHealth("offline"));
-
-    void fetch(`${TIME_API}/health`)
-      .then((r) => r.json())
-      .then((h) => setTimeHealth(h.status ?? "ok"))
-      .catch(() => setTimeHealth("offline"));
+    void fetchAllServiceHealth().then((health) => {
+      setServiceHealth(health);
+      setServiceHealthCheckedAt(new Date().toISOString());
+    });
   }, []);
+
+  useEffect(() => {
+    if (view !== "systemStatus") return;
+    setServiceHealthRefreshing(true);
+    void fetchAllServiceHealth()
+      .then((health) => {
+        setServiceHealth(health);
+        setServiceHealthCheckedAt(new Date().toISOString());
+      })
+      .finally(() => setServiceHealthRefreshing(false));
+  }, [view]);
 
   useEffect(() => {
     if (!token) {
@@ -3651,6 +3745,17 @@ export default function App() {
     auditUiView(next);
   }
 
+  async function refreshMicroserviceHealth() {
+    setServiceHealthRefreshing(true);
+    try {
+      const health = await fetchAllServiceHealth();
+      setServiceHealth(health);
+      setServiceHealthCheckedAt(new Date().toISOString());
+    } finally {
+      setServiceHealthRefreshing(false);
+    }
+  }
+
   function openProjectCreate() {
     setCreatingProject(true);
     setEditingProjectId(null);
@@ -3863,9 +3968,10 @@ export default function App() {
               </div>
             </form>
             {error && <p className="status error">{error}</p>}
-            <p className="status">
-              {t("app.health")}: {health} · {t("time.health")}: {timeHealth}
-            </p>
+            <div className="login-service-status">
+              <p className="login-service-status-title">{t("system.statusTitle")}</p>
+              <ServiceHealthGrid health={serviceHealth} label={t} compact />
+            </div>
           </section>
         </main>
       ) : (
@@ -3985,6 +4091,30 @@ export default function App() {
                 <span className="nav-label">{t("nav.resources")}</span>
               </button>
             ) : null}
+            <div className="nav-group">
+              <button
+                type="button"
+                className={
+                  activeView === "systemStatus"
+                    ? "nav-group-label nav-item active"
+                    : "nav-group-label nav-item"
+                }
+                onClick={() => goToView("systemStatus")}
+                title={t("nav.system")}
+              >
+                <NavIcon name="system" />
+                <span className="nav-label">{t("nav.system")}</span>
+              </button>
+              <button
+                type="button"
+                className={activeView === "systemStatus" ? "nav-item nav-subitem active" : "nav-item nav-subitem"}
+                onClick={() => goToView("systemStatus")}
+                title={t("nav.systemStatus")}
+              >
+                <NavIcon name="status" />
+                <span className="nav-label">{t("nav.systemStatus")}</span>
+              </button>
+            </div>
           </nav>
 
           <main className="workspace">
@@ -4486,6 +4616,33 @@ export default function App() {
                   {customerError ? <p className="status error">{customerError}</p> : null}
                 </form>
                 ) : null}
+              </section>
+            ) : null}
+
+            {activeView === "systemStatus" ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("system.statusTitle")}</h1>
+                    <p>{t("system.intro")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => void refreshMicroserviceHealth()}
+                    disabled={serviceHealthRefreshing}
+                  >
+                    {serviceHealthRefreshing ? t("system.refreshing") : t("system.refresh")}
+                  </button>
+                </div>
+                {serviceHealthCheckedAt ? (
+                  <p className="muted">
+                    {t("system.lastChecked", {
+                      time: new Date(serviceHealthCheckedAt).toLocaleString(),
+                    })}
+                  </p>
+                ) : null}
+                <ServiceHealthGrid health={serviceHealth} label={t} />
               </section>
             ) : null}
 

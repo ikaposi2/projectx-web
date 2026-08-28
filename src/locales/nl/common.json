@@ -24,7 +24,25 @@
     "catalog": "Catalogus",
     "resources": "Resources",
     "customers": "Klanten",
-    "reporting": "Rapportage"
+    "reporting": "Rapportage",
+    "system": "Systeem",
+    "systemStatus": "Microservice-status"
+  },
+  "system": {
+    "statusTitle": "Microservice-status",
+    "intro": "Live gezondheidscontrole voor elke backend-service.",
+    "refresh": "Vernieuwen",
+    "refreshing": "Bezig met vernieuwen…",
+    "lastChecked": "Laatst gecontroleerd: {{time}}",
+    "services": {
+      "identity": "Identity",
+      "time": "Time",
+      "project": "Project",
+      "partner": "Partner",
+      "customer": "Customer",
+      "catalog": "Catalog",
+      "finance": "Finance"
+    }
   },
   "home": {
     "title": "Zo werkt de flow",
