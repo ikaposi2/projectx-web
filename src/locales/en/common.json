@@ -2,6 +2,7 @@
   "app": {
     "tagline": "Internal operations for observability and security services",
     "login": "Sign in",
+    "ssoLogin": "Sign in with Kaposi SSO",
     "register": "Create account",
     "email": "Email",
     "password": "Password",

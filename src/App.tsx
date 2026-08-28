@@ -15,11 +15,17 @@ import {
   emptyCatalogContent,
   type CatalogContentState,
 } from "./components/CatalogContentEditor";
+import { consumeOidcCallback, clearOidcCallbackUrl, oidcRedirectUri, startOidcLogin, type OidcPublicConfig } from "./oidc";
 
 type Brand = {
   display_name: string;
   default_locale: string;
   logo_url: string | null;
+};
+
+type AuthConfig = {
+  auth_mode: string;
+  oidc?: OidcPublicConfig | null;
 };
 
 type User = {
@@ -1040,6 +1046,7 @@ function isoInMonths(iso: string | null | undefined, months: string[]): boolean 
 export default function App() {
   const { t, i18n } = useTranslation();
   const [brand, setBrand] = useState<Brand | null>(null);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [serviceHealth, setServiceHealth] = useState<Record<string, ServiceHealthState>>({});
   const [serviceHealthCheckedAt, setServiceHealthCheckedAt] = useState<string | null>(null);
   const [serviceHealthRefreshing, setServiceHealthRefreshing] = useState(false);
@@ -1308,6 +1315,11 @@ export default function App() {
       })
       .catch(() => setBrand({ display_name: "Platform", default_locale: "nl", logo_url: null }));
 
+    void fetch(`${API}/auth/config`)
+      .then((r) => r.json())
+      .then((c: AuthConfig) => setAuthConfig(c))
+      .catch(() => setAuthConfig({ auth_mode: "local" }));
+
     void fetchAllServiceHealth().then((health) => {
       setServiceHealth(health);
       setServiceHealthCheckedAt(new Date().toISOString());
@@ -1351,6 +1363,49 @@ export default function App() {
         setAuditSessionId(null);
       });
   }, [token]);
+
+  useEffect(() => {
+    const result = consumeOidcCallback();
+    if (!result) return;
+    if ("error" in result) {
+      setError(result.error);
+      clearOidcCallbackUrl();
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/auth/oidc/callback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: result.code,
+            code_verifier: result.codeVerifier,
+            redirect_uri: oidcRedirectUri(),
+          }),
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}));
+          throw new Error(detail.detail ?? res.statusText);
+        }
+        const data = (await res.json()) as { access_token: string };
+        if (cancelled) return;
+        localStorage.setItem("projectx.token", data.access_token);
+        setAuditSessionId(sessionIdFromToken(data.access_token));
+        setToken(data.access_token);
+        auditUiLogin("success", { "event.reason": "oidc" });
+        clearOidcCallbackUrl();
+      } catch (err) {
+        if (cancelled) return;
+        auditUiLogin("failure", { "event.reason": "oidc" });
+        setError(err instanceof Error ? err.message : "error");
+        clearOidcCallbackUrl();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const searchCustomers = useCallback(
     async (query: string) => {
@@ -3927,6 +3982,17 @@ export default function App() {
           <section className="panel">
             <h1>{displayName}</h1>
             <p>{t("app.tagline")}</p>
+            {authConfig?.auth_mode === "oidc" && authConfig.oidc ? (
+              <div className="actions">
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => void startOidcLogin(authConfig.oidc!)}
+                >
+                  {t("app.ssoLogin")}
+                </button>
+              </div>
+            ) : (
             <form onSubmit={submit}>
               {mode === "register" && (
                 <>
@@ -3967,6 +4033,7 @@ export default function App() {
                 </button>
               </div>
             </form>
+            )}
             {error && <p className="status error">{error}</p>}
             <div className="login-service-status">
               <p className="login-service-status-title">{t("system.statusTitle")}</p>
