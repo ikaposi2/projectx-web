@@ -95,6 +95,10 @@ export function initOtel(): void {
             }
             const peer = peerServiceFromPath(pathname);
             if (peer) span.setAttribute("peer.service", peer);
+            if (pathname.includes("/auth/oidc/callback")) {
+              span.setAttribute("auth.method", "oidc");
+              span.setAttribute("identity.provider", "keycloak");
+            }
           } catch {
             /* ignore */
           }

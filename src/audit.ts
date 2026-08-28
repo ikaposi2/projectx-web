@@ -108,6 +108,20 @@ export function auditUiLogin(outcome: "success" | "failure", fields: AuditFields
     category: ["ui", "authentication"],
     eventType: ["start"],
     message: outcome === "success" ? "ui login succeeded" : "ui login failed",
+    "auth.method": "oidc",
+    "identity.provider": "keycloak",
+    ...fields,
+  });
+}
+
+export function auditUiSsoStart(fields: AuditFields = {}): void {
+  audit("ui-sso-start", {
+    outcome: "success",
+    category: ["ui", "authentication"],
+    eventType: ["start"],
+    message: "ui sso redirect started",
+    "auth.method": "oidc",
+    "identity.provider": "keycloak",
     ...fields,
   });
 }

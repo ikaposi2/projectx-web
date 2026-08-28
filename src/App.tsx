@@ -1,9 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { useTranslation } from "react-i18next";
 import {
   auditUiAction,
   auditUiLogin,
   auditUiLogout,
+  auditUiSsoStart,
   auditUiView,
   sessionIdFromToken,
   setAuditSessionId,
@@ -16,6 +18,8 @@ import {
   type CatalogContentState,
 } from "./components/CatalogContentEditor";
 import { consumeOidcCallback, clearOidcCallbackUrl, oidcRedirectUri, startOidcLogin, type OidcPublicConfig } from "./oidc";
+
+const oidcTracer = trace.getTracer("projectX-web");
 
 type Brand = {
   display_name: string;
@@ -1373,7 +1377,10 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void (async () => {
+    void oidcTracer.startActiveSpan("oidc.callback", async (span) => {
+      span.setAttribute("auth.method", "oidc");
+      span.setAttribute("identity.provider", "keycloak");
+      span.setAttribute("peer.service", "projectX-identity");
       try {
         const res = await fetch(`${API}/auth/oidc/callback`, {
           method: "POST",
@@ -1393,15 +1400,19 @@ export default function App() {
         localStorage.setItem("projectx.token", data.access_token);
         setAuditSessionId(sessionIdFromToken(data.access_token));
         setToken(data.access_token);
-        auditUiLogin("success", { "event.reason": "oidc" });
+        auditUiLogin("success");
         clearOidcCallbackUrl();
       } catch (err) {
         if (cancelled) return;
-        auditUiLogin("failure", { "event.reason": "oidc" });
+        span.recordException(err instanceof Error ? err : new Error(String(err)));
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        auditUiLogin("failure");
         setError(err instanceof Error ? err.message : "error");
         clearOidcCallbackUrl();
+      } finally {
+        span.end();
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -3987,7 +3998,10 @@ export default function App() {
                 <button
                   className="primary"
                   type="button"
-                  onClick={() => void startOidcLogin(authConfig.oidc!)}
+                  onClick={() => {
+                    auditUiSsoStart();
+                    void startOidcLogin(authConfig.oidc!);
+                  }}
                 >
                   {t("app.ssoLogin")}
                 </button>
