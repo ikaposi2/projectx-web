@@ -9,6 +9,11 @@
     "fullName": "Volledige naam",
     "logout": "Uitloggen",
     "language": "Taal",
+    "inbox": {
+      "title": "Berichten",
+      "empty": "Nog geen berichten.",
+      "unread": "{{count}} nieuw"
+    },
     "welcome": "Welkom, {{name}}",
     "health": "Identity-service",
     "brandPlaceholder": "Bedrijfsnaam volgt via configuratie"
@@ -48,8 +53,8 @@
     },
     "sync": {
       "title": "Zammad-synchronisatie",
-      "intro": "Stem ProjectX af op Zammad: projecten worden ticket-groepen; verwijderde klanten verliezen hun organisatie.",
-      "whereToLook": "In Zammad: Admin → Groups voor projectgroepen (naam Klant · Project). Klanten staan onder Admin → Organizations.",
+      "intro": "Stem ProjectX af op Zammad: elk project is een ticket-groep; elke klant is een organisatie. Nieuwe projecten synchroniseren automatisch — gebruik dit om afwijkingen te herstellen.",
+      "whereToLook": "In Zammad: Admin → Groups voor projectwachtrijen (naam Klant · Project). Klanten staan onder Admin → Organizations — niet onder Groups.",
       "button": "Synchroniseer van ProjectX naar Zammad",
       "running": "Bezig met synchroniseren…",
       "summary": "Resultaat laatste sync:",

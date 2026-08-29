@@ -9,6 +9,11 @@
     "fullName": "Full name",
     "logout": "Sign out",
     "language": "Language",
+    "inbox": {
+      "title": "Messages",
+      "empty": "No messages yet.",
+      "unread": "{{count}} new"
+    },
     "welcome": "Welcome, {{name}}",
     "health": "Identity service",
     "brandPlaceholder": "Company name will come from configuration"
@@ -48,8 +53,8 @@
     },
     "sync": {
       "title": "Zammad sync",
-      "intro": "Reconcile ProjectX with Zammad: projects become ticket groups; removed customers lose their organization.",
-      "whereToLook": "In Zammad open Admin → Groups to see project groups (named Customer · Project). Customers appear under Admin → Organizations.",
+      "intro": "Reconcile ProjectX with Zammad: each project is a ticket group; each customer is an organization. New projects sync automatically — use this to fix drift or remove stale entries.",
+      "whereToLook": "In Zammad open Admin → Groups for project queues (named Customer · Project). Customers appear under Admin → Organizations — not under Groups.",
       "button": "Sync from ProjectX to Zammad",
       "running": "Syncing…",
       "summary": "Last sync result:",

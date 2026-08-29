@@ -407,7 +407,21 @@ type NavIconName =
   | "flowBill"
   | "system"
   | "status"
-  | "sync";
+  | "sync"
+  | "inbox";
+
+type InboxMessage = {
+  id: string;
+  kind: string;
+  title: string;
+  invoice_id: string;
+  invoice_number: string;
+  period_label: string | null;
+  amount_eur: number;
+  read: boolean;
+  read_at: string | null;
+  created_at: string | null;
+};
 
 type ReportSummary = {
   from_date: string;
@@ -573,6 +587,13 @@ function NavIcon({ name }: { name: NavIconName }) {
           <path d="M20 7v5h-5" />
           <path d="M20 12a8 8 0 0 1-13.7 5.7" />
           <path d="M4 17v-5h5" />
+        </svg>
+      );
+    case "inbox":
+      return (
+        <svg {...common}>
+          <path d="M4 6h16v12H4z" />
+          <path d="m4 7 8 6 8-6" />
         </svg>
       );
     default:
@@ -1083,6 +1104,10 @@ export default function App() {
   const [zammadSyncRunning, setZammadSyncRunning] = useState(false);
   const [zammadSyncResult, setZammadSyncResult] = useState<ZammadProjectSyncResult | null>(null);
   const [zammadSyncError, setZammadSyncError] = useState<string | null>(null);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
+  const [inboxUnread, setInboxUnread] = useState(0);
+  const inboxPanelRef = useRef<HTMLDivElement | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem("projectx.token"));
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -1989,7 +2014,76 @@ export default function App() {
     setProjects([]);
     setBudgets([]);
     setCustomers([]);
+    setInboxOpen(false);
+    setInboxMessages([]);
+    setInboxUnread(0);
   }
+
+  const refreshInbox = useCallback(async () => {
+    if (!token || isTokenExpired(token)) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [listRes, countRes] = await Promise.all([
+        fetch(`${FINANCE_API}/inbox`, { headers }),
+        fetch(`${FINANCE_API}/inbox/unread-count`, { headers }),
+      ]);
+      if (listRes.ok) {
+        setInboxMessages((await listRes.json()) as InboxMessage[]);
+      }
+      if (countRes.ok) {
+        const data = (await countRes.json()) as { count: number };
+        setInboxUnread(data.count);
+      }
+    } catch {
+      /* ignore transient inbox errors */
+    }
+  }, [token]);
+
+  async function openInboxMessage(messageId: string) {
+    if (!token) return;
+    try {
+      const res = await fetch(`${FINANCE_API}/inbox/${messageId}/open`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { pdf_url: string | null };
+      await refreshInbox();
+      if (!data.pdf_url) return;
+      if (data.pdf_url.startsWith("http")) {
+        window.open(data.pdf_url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      const pdfRes = await fetch(data.pdf_url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!pdfRes.ok) return;
+      const blob = await pdfRes.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    if (!token || !user) return;
+    void refreshInbox();
+    const interval = window.setInterval(() => void refreshInbox(), 60_000);
+    return () => window.clearInterval(interval);
+  }, [token, user, refreshInbox]);
+
+  useEffect(() => {
+    if (!inboxOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!inboxPanelRef.current?.contains(event.target as Node)) {
+        setInboxOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [inboxOpen]);
 
   async function persistCell(row: GridRow, date: string, raw: string) {
     if (!token || row.readOnly) return;
@@ -4084,23 +4178,89 @@ export default function App() {
           )}
         </div>
         <div className="topbar-right">
-          {user ? (
-            <button type="button" onClick={logout}>
-              {t("app.logout")}
-            </button>
-          ) : null}
-          <div className="lang" aria-label={t("app.language")}>
-            <button type="button" className={i18n.language === "nl" ? "active" : ""} onClick={() => setLocale("nl")}>
-              NL
+          <div className="lang topbar-lang" aria-label={t("app.language")}>
+            <button
+              type="button"
+              className={`lang-flag ${i18n.language === "nl" ? "active" : ""}`}
+              aria-label="Nederlands"
+              title="Nederlands"
+              onClick={() => setLocale("nl")}
+            >
+              🇳🇱
             </button>
             <button
               type="button"
-              className={i18n.language.startsWith("en") ? "active" : ""}
+              className={`lang-flag ${i18n.language.startsWith("en") ? "active" : ""}`}
+              aria-label="English"
+              title="English"
               onClick={() => setLocale("en")}
             >
-              EN
+              🇬🇧
             </button>
           </div>
+          {user ? (
+            <>
+              <div className="topbar-inbox-wrap" ref={inboxPanelRef}>
+                <button
+                  type="button"
+                  className="topbar-icon-btn"
+                  aria-expanded={inboxOpen}
+                  aria-label={t("app.inbox.title")}
+                  title={t("app.inbox.title")}
+                  onClick={() => {
+                    setInboxOpen((open) => {
+                      const next = !open;
+                      if (next) void refreshInbox();
+                      return next;
+                    });
+                  }}
+                >
+                  <NavIcon name="inbox" />
+                  {inboxUnread > 0 ? (
+                    <span className="topbar-inbox-badge" aria-hidden="true">
+                      {inboxUnread > 9 ? "9+" : inboxUnread}
+                    </span>
+                  ) : null}
+                </button>
+                {inboxOpen ? (
+                  <div className="topbar-inbox-panel" role="dialog" aria-label={t("app.inbox.title")}>
+                    <div className="topbar-inbox-head">
+                      <strong>{t("app.inbox.title")}</strong>
+                      {inboxUnread > 0 ? (
+                        <span className="topbar-inbox-new">{t("app.inbox.unread", { count: inboxUnread })}</span>
+                      ) : null}
+                    </div>
+                    {inboxMessages.length === 0 ? (
+                      <p className="topbar-inbox-empty">{t("app.inbox.empty")}</p>
+                    ) : (
+                      <ul className="topbar-inbox-list">
+                        {inboxMessages.map((msg) => (
+                          <li key={msg.id}>
+                            <button
+                              type="button"
+                              className={`topbar-inbox-item${msg.read ? "" : " unread"}`}
+                              onClick={() => void openInboxMessage(msg.id)}
+                            >
+                              <span className="topbar-inbox-item-title">{msg.title}</span>
+                              <span className="topbar-inbox-item-meta">
+                                {msg.invoice_number}
+                                {msg.period_label ? ` · ${msg.period_label}` : ""}
+                                {" · "}
+                                €{msg.amount_eur.toFixed(2)}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+              <button type="button" onClick={logout}>
+                {t("app.logout")}
+              </button>
+            </>
+          ) : null}
         </div>
       </header>
 
