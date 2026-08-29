@@ -1150,6 +1150,11 @@ body {
   font-size: 1rem;
 }
 
+.finance-chart-block {
+  width: 100%;
+  min-height: 12rem;
+}
+
 .finance-chart-block + .finance-chart-block {
   margin-top: 0.85rem;
   padding-top: 0.75rem;

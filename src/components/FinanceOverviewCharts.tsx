@@ -11,6 +11,13 @@ import {
 } from "recharts";
 import type { FinanceMonthPoint } from "../financeMetrics";
 
+/** Recharts sets SVG presentation attributes; CSS custom properties do not resolve there. */
+const CHART_COLORS = {
+  muted: "#9aabbf",
+  border: "#3a4c63",
+  grid: "rgba(58, 76, 99, 0.55)",
+} as const;
+
 type MetricKey = "costs" | "grossProfit" | "netProfit" | "funnel";
 
 type MetricConfig = {
@@ -44,16 +51,17 @@ function ChartTooltip({
   formatValue,
 }: {
   active?: boolean;
-  payload?: { value?: number; color?: string }[];
-  label?: string;
+  payload?: readonly { value?: unknown }[];
+  label?: unknown;
   formatValue: (value: number) => string;
 }) {
   if (!active || !payload?.length) return null;
-  const value = payload[0]?.value ?? 0;
+  const raw = payload[0]?.value;
+  const value = typeof raw === "number" ? raw : Number(raw);
   return (
     <div className="finance-chart-tooltip">
-      <strong>{label}</strong>
-      <div>{formatValue(value)}</div>
+      <strong>{String(label ?? "")}</strong>
+      <div>{formatValue(Number.isFinite(value) ? value : 0)}</div>
     </div>
   );
 }
@@ -81,23 +89,32 @@ function MetricCharts({
       <h3>{metric.title}</h3>
       <div className="finance-chart-block">
         <h4>{lineChartLabel}</h4>
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={180} minWidth={0}>
           <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid stroke="rgba(58, 76, 99, 0.55)" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted)", fontSize: 11 }}
-              axisLine={{ stroke: "var(--border)" }}
+              tick={{ fill: CHART_COLORS.muted, fontSize: 11 }}
+              axisLine={{ stroke: CHART_COLORS.border }}
               tickLine={false}
             />
             <YAxis
               tickFormatter={euroAxis}
-              tick={{ fill: "var(--muted)", fontSize: 11 }}
+              tick={{ fill: CHART_COLORS.muted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={52}
             />
-            <Tooltip content={<ChartTooltip formatValue={formatValue} />} />
+            <Tooltip
+              content={({ active, payload, label }) => (
+                <ChartTooltip
+                  active={active}
+                  payload={payload as readonly { value?: unknown }[] | undefined}
+                  label={label}
+                  formatValue={formatValue}
+                />
+              )}
+            />
             <Line
               type="monotone"
               dataKey="value"
@@ -111,23 +128,32 @@ function MetricCharts({
       </div>
       <div className="finance-chart-block">
         <h4>{barChartLabel}</h4>
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={180} minWidth={0}>
           <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid stroke="rgba(58, 76, 99, 0.55)" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke={CHART_COLORS.grid} strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted)", fontSize: 11 }}
-              axisLine={{ stroke: "var(--border)" }}
+              tick={{ fill: CHART_COLORS.muted, fontSize: 11 }}
+              axisLine={{ stroke: CHART_COLORS.border }}
               tickLine={false}
             />
             <YAxis
               tickFormatter={euroAxis}
-              tick={{ fill: "var(--muted)", fontSize: 11 }}
+              tick={{ fill: CHART_COLORS.muted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={52}
             />
-            <Tooltip content={<ChartTooltip formatValue={formatValue} />} />
+            <Tooltip
+              content={({ active, payload, label }) => (
+                <ChartTooltip
+                  active={active}
+                  payload={payload as readonly { value?: unknown }[] | undefined}
+                  label={label}
+                  formatValue={formatValue}
+                />
+              )}
+            />
             <Bar dataKey="value" fill={metric.color} radius={[4, 4, 0, 0]} maxBarSize={36} />
           </BarChart>
         </ResponsiveContainer>

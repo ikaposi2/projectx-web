@@ -3770,21 +3770,21 @@ export default function App() {
   const financeChartMetrics = useMemo(
     () =>
       [
-        { key: "costs" as const, title: t("finance.overviewChartCosts"), color: "var(--warn)" },
+        { key: "costs" as const, title: t("finance.overviewChartCosts"), color: "#d4a84b" },
         {
           key: "grossProfit" as const,
           title: t("finance.overviewChartGrossProfit"),
-          color: "var(--ok)",
+          color: "#5cba8a",
         },
         {
           key: "netProfit" as const,
           title: t("finance.overviewChartNetProfit"),
-          color: "var(--brand-primary)",
+          color: "#8eb8e8",
         },
         {
           key: "funnel" as const,
           title: t("finance.overviewChartFunnel"),
-          color: "var(--brand-accent)",
+          color: "#6aa4e0",
         },
       ] as const,
     [t],
