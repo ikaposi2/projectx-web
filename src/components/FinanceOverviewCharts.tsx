@@ -9,6 +9,15 @@ export type MetricConfig = {
   color: string;
 };
 
+/** Distinct line colors on the dark finance theme (avoid similar blues). */
+export const FINANCE_LINE_COLORS: Record<MetricKey, string> = {
+  revenue: "#5eb8ff",
+  costs: "#f0a845",
+  grossProfit: "#66d19a",
+  netProfit: "#c792ff",
+  funnel: "#ff7eb3",
+};
+
 type FinanceOverviewChartsProps = {
   year: number;
   onYearChange: (year: number) => void;
@@ -16,12 +25,12 @@ type FinanceOverviewChartsProps = {
   metrics: MetricConfig[];
   yearLabel: string;
   lineChartLabel: string;
-  barChartLabel: string;
+  legendHint: string;
   emptyLabel: string;
   currencyTooltip: (value: number) => string;
 };
 
-const CHART_HEIGHT = 220;
+const CHART_HEIGHT = 240;
 const CHART_PAD = { top: 14, right: 8, bottom: 30, left: 46 };
 
 function euroAxis(value: number): string {
@@ -66,6 +75,7 @@ function CombinedFinanceLineChart({
   enabled,
   onToggle,
   lineChartLabel,
+  legendHint,
   formatValue,
 }: {
   data: FinanceMonthPoint[];
@@ -73,6 +83,7 @@ function CombinedFinanceLineChart({
   enabled: Record<MetricKey, boolean>;
   onToggle: (key: MetricKey) => void;
   lineChartLabel: string;
+  legendHint: string;
   formatValue: (value: number) => string;
 }) {
   const [containerRef, width] = useChartWidth();
@@ -81,9 +92,7 @@ function CombinedFinanceLineChart({
   const plotW = Math.max(0, width - CHART_PAD.left - CHART_PAD.right);
   const plotH = CHART_HEIGHT - CHART_PAD.top - CHART_PAD.bottom;
 
-  const activeValues = data.flatMap((row) =>
-    activeMetrics.map((m) => row[m.key]),
-  );
+  const activeValues = data.flatMap((row) => activeMetrics.map((m) => row[m.key]));
   const rawMin = activeValues.length ? Math.min(0, ...activeValues) : 0;
   const rawMax = activeValues.length ? Math.max(0, ...activeValues) : 1;
   const min = rawMin === rawMax ? rawMin - 1 : rawMin;
@@ -107,217 +116,171 @@ function CombinedFinanceLineChart({
 
   return (
     <article className="finance-chart-card finance-combined-line-card">
-      <h3>{lineChartLabel}</h3>
       <div className="finance-combined-line-layout">
-        <div ref={containerRef} className="finance-chart-frame finance-combined-line-frame">
-          {activeMetrics.length === 0 ? (
-            <p className="status finance-line-empty">—</p>
-          ) : (
-            <svg
-              className="finance-line-chart"
-              width={width}
-              height={CHART_HEIGHT}
-              viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
-              role="img"
-              aria-label={data
-                .map((row) =>
-                  activeMetrics
-                    .map((m) => `${monthLabel(row.month)} ${m.title}: ${formatValue(row[m.key])}`)
-                    .join(", "),
-                )
-                .join("; ")}
-            >
-              {yTicks(min, max).map((tick) => {
-                const y = toY(tick);
-                return (
-                  <g key={tick}>
-                    <line
-                      x1={CHART_PAD.left}
-                      y1={y}
-                      x2={width - CHART_PAD.right}
-                      y2={y}
-                      stroke="rgba(58, 76, 99, 0.55)"
-                      strokeDasharray="3 3"
-                    />
-                    <text x={CHART_PAD.left - 6} y={y + 4} textAnchor="end" className="finance-chart-axis">
-                      {euroAxis(tick)}
-                    </text>
-                  </g>
-                );
-              })}
-              <line
-                x1={CHART_PAD.left}
-                y1={zeroY}
-                x2={width - CHART_PAD.right}
-                y2={zeroY}
-                stroke="#3a4c63"
-              />
-              {data.map((row, i) => (
-                <rect
-                  key={row.month}
-                  x={toX(i) - (plotW / data.length) * 0.35}
-                  y={CHART_PAD.top}
-                  width={(plotW / data.length) * 0.7}
-                  height={plotH}
-                  fill="transparent"
-                  onMouseEnter={() => setHover(i)}
-                  onMouseLeave={() => setHover(null)}
-                />
-              ))}
-              {series.map(({ metric, points }) => {
-                const linePath = points
-                  .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-                  .join(" ");
-                return (
-                  <g key={metric.key}>
-                    <path
-                      d={linePath}
-                      fill="none"
-                      stroke={metric.color}
-                      strokeWidth={2.5}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                    />
-                    {points.map((p, i) => (
-                      <circle
-                        key={`${metric.key}-${i}`}
-                        cx={p.x}
-                        cy={p.y}
-                        r={hover === i ? 4.5 : 3}
-                        fill={metric.color}
-                        pointerEvents="none"
+        <div className="finance-combined-line-main">
+          <h3>{lineChartLabel}</h3>
+          <div ref={containerRef} className="finance-chart-frame finance-combined-line-frame">
+            {activeMetrics.length === 0 ? (
+              <p className="status finance-line-empty">{legendHint}</p>
+            ) : (
+              <svg
+                className="finance-line-chart"
+                width={width}
+                height={CHART_HEIGHT}
+                viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
+                role="img"
+                aria-label={data
+                  .map((row) =>
+                    activeMetrics
+                      .map((m) => `${monthLabel(row.month)} ${m.title}: ${formatValue(row[m.key])}`)
+                      .join(", "),
+                  )
+                  .join("; ")}
+              >
+                {yTicks(min, max).map((tick) => {
+                  const y = toY(tick);
+                  return (
+                    <g key={tick}>
+                      <line
+                        x1={CHART_PAD.left}
+                        y1={y}
+                        x2={width - CHART_PAD.right}
+                        y2={y}
+                        stroke="rgba(58, 76, 99, 0.55)"
+                        strokeDasharray="3 3"
                       />
-                    ))}
-                  </g>
-                );
-              })}
-              {data.map((row, i) => (
-                <text
-                  key={`${row.month}-label`}
-                  x={toX(i)}
-                  y={CHART_HEIGHT - 8}
-                  textAnchor="middle"
-                  className="finance-chart-axis"
-                >
-                  {monthLabel(row.month)}
-                </text>
-              ))}
-              {hover != null && data[hover] ? (
-                <g pointerEvents="none">
+                      <text x={CHART_PAD.left - 6} y={y + 4} textAnchor="end" className="finance-chart-axis">
+                        {euroAxis(tick)}
+                      </text>
+                    </g>
+                  );
+                })}
+                <line
+                  x1={CHART_PAD.left}
+                  y1={zeroY}
+                  x2={width - CHART_PAD.right}
+                  y2={zeroY}
+                  stroke="#3a4c63"
+                />
+                {data.map((row, i) => (
                   <rect
-                    x={Math.min(toX(hover) - 72, width - 148)}
-                    y={8}
-                    width={144}
-                    height={16 + activeMetrics.length * 14}
-                    rx={4}
-                    fill="#273449"
-                    stroke="#3a4c63"
+                    key={row.month}
+                    x={toX(i) - (plotW / data.length) * 0.35}
+                    y={CHART_PAD.top}
+                    width={(plotW / data.length) * 0.7}
+                    height={plotH}
+                    fill="transparent"
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
                   />
+                ))}
+                {series.map(({ metric, points }) => {
+                  const linePath = points
+                    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+                    .join(" ");
+                  return (
+                    <g key={metric.key}>
+                      <path
+                        d={linePath}
+                        fill="none"
+                        stroke={metric.color}
+                        strokeWidth={2.75}
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                      {points.map((p, i) => (
+                        <circle
+                          key={`${metric.key}-${i}`}
+                          cx={p.x}
+                          cy={p.y}
+                          r={hover === i ? 5 : 3.5}
+                          fill={metric.color}
+                          stroke="#1b2433"
+                          strokeWidth={1}
+                          pointerEvents="none"
+                        />
+                      ))}
+                    </g>
+                  );
+                })}
+                {data.map((row, i) => (
                   <text
-                    x={Math.min(toX(hover), width - 80)}
-                    y={22}
+                    key={`${row.month}-label`}
+                    x={toX(i)}
+                    y={CHART_HEIGHT - 8}
                     textAnchor="middle"
-                    className="finance-chart-tooltip-text"
+                    className="finance-chart-axis"
                   >
-                    {monthLabel(data[hover].month)}
+                    {monthLabel(row.month)}
                   </text>
-                  {activeMetrics.map((m, idx) => (
+                ))}
+                {hover != null && data[hover] ? (
+                  <g pointerEvents="none">
+                    <rect
+                      x={Math.min(toX(hover) - 72, width - 148)}
+                      y={8}
+                      width={144}
+                      height={16 + activeMetrics.length * 14}
+                      rx={4}
+                      fill="#273449"
+                      stroke="#3a4c63"
+                    />
                     <text
-                      key={m.key}
-                      x={Math.min(toX(hover) - 66, width - 142)}
-                      y={36 + idx * 14}
+                      x={Math.min(toX(hover), width - 80)}
+                      y={22}
+                      textAnchor="middle"
                       className="finance-chart-tooltip-text"
                     >
-                      <tspan fill={m.color}>● </tspan>
-                      {m.title}: {formatValue(data[hover][m.key])}
+                      {monthLabel(data[hover].month)}
                     </text>
-                  ))}
-                </g>
-              ) : null}
-            </svg>
-          )}
-        </div>
-        <ul className="finance-chart-legend" aria-label={lineChartLabel}>
-          {metrics.map((metric) => {
-            const on = enabled[metric.key];
-            return (
-              <li key={metric.key}>
-                <button
-                  type="button"
-                  className={on ? "finance-legend-item active" : "finance-legend-item"}
-                  aria-pressed={on}
-                  onClick={() => onToggle(metric.key)}
-                >
-                  <span className="finance-legend-swatch" style={{ background: metric.color, opacity: on ? 1 : 0.35 }} />
-                  <span className={on ? "" : "muted"}>{metric.title}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </article>
-  );
-}
-
-function FinanceBarChart({
-  data,
-  color,
-}: {
-  data: { label: string; value: number }[];
-  color: string;
-}) {
-  const max = Math.max(...data.map((d) => Math.abs(d.value)), 1);
-
-  return (
-    <div
-      className="funnel-bar-chart finance-metric-bar-chart"
-      role="img"
-      aria-label={data.map((d) => `${d.label}: ${euroAxis(d.value)}`).join(", ")}
-    >
-      {data.map((row) => {
-        const magnitude = Math.abs(row.value);
-        const pct = Math.max(magnitude === 0 ? 0 : 4, (magnitude / max) * 100);
-        return (
-          <div key={row.label} className="funnel-bar-col">
-            <div className="funnel-bar-meta muted">{euroAxis(row.value)}</div>
-            <div className="funnel-bar-track">
-              <div
-                className="funnel-bar-fill"
-                style={{
-                  height: `${pct}%`,
-                  background: row.value < 0 ? "#e07070" : color,
-                }}
-              />
-            </div>
-            <div className="funnel-bar-label">{row.label}</div>
+                    {activeMetrics.map((m, idx) => (
+                      <text
+                        key={m.key}
+                        x={Math.min(toX(hover) - 66, width - 142)}
+                        y={36 + idx * 14}
+                        className="finance-chart-tooltip-text"
+                      >
+                        <tspan fill={m.color}>● </tspan>
+                        {m.title}: {formatValue(data[hover][m.key])}
+                      </text>
+                    ))}
+                  </g>
+                ) : null}
+              </svg>
+            )}
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function MetricBarChart({
-  metric,
-  data,
-  barChartLabel,
-}: {
-  metric: MetricConfig;
-  data: FinanceMonthPoint[];
-  barChartLabel: string;
-}) {
-  const chartData = data.map((row) => ({
-    label: monthLabel(row.month),
-    value: row[metric.key],
-  }));
-
-  return (
-    <article className="finance-chart-card">
-      <h3>{metric.title}</h3>
-      <div className="finance-chart-block">
-        <h4>{barChartLabel}</h4>
-        <FinanceBarChart data={chartData} color={metric.color} />
+        </div>
+        <div className="finance-chart-legend-panel">
+          <p className="finance-legend-hint muted">{legendHint}</p>
+          <ul className="finance-chart-legend" aria-label={lineChartLabel}>
+            {metrics.map((metric) => {
+              const on = enabled[metric.key];
+              return (
+                <li key={metric.key}>
+                  <button
+                    type="button"
+                    className={on ? "finance-legend-item active" : "finance-legend-item"}
+                    aria-pressed={on}
+                    onClick={() => onToggle(metric.key)}
+                  >
+                    <span
+                      className="finance-legend-line"
+                      style={{
+                        background: on ? metric.color : "transparent",
+                        borderColor: metric.color,
+                        opacity: on ? 1 : 0.45,
+                      }}
+                      aria-hidden
+                    />
+                    <span className={on ? "finance-legend-label" : "finance-legend-label muted off"}>
+                      {metric.title}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       </div>
     </article>
   );
@@ -327,8 +290,8 @@ const DEFAULT_ENABLED: Record<MetricKey, boolean> = {
   revenue: true,
   costs: true,
   grossProfit: true,
-  netProfit: true,
-  funnel: true,
+  netProfit: false,
+  funnel: false,
 };
 
 export function FinanceOverviewCharts({
@@ -338,11 +301,17 @@ export function FinanceOverviewCharts({
   metrics,
   yearLabel,
   lineChartLabel,
-  barChartLabel,
+  legendHint,
   emptyLabel,
   currencyTooltip,
 }: FinanceOverviewChartsProps) {
   const [enabled, setEnabled] = useState<Record<MetricKey, boolean>>(DEFAULT_ENABLED);
+
+  const metricsWithColors = metrics.map((m) => ({
+    ...m,
+    color: FINANCE_LINE_COLORS[m.key],
+  }));
+
   const hasData = data.some(
     (row) =>
       row.revenue !== 0 ||
@@ -379,24 +348,15 @@ export function FinanceOverviewCharts({
         </label>
       </div>
       {!hasData ? <p className="status">{emptyLabel}</p> : null}
-      <div className="finance-charts-grid">
-        <CombinedFinanceLineChart
-          data={data}
-          metrics={metrics}
-          enabled={enabled}
-          onToggle={toggleMetric}
-          lineChartLabel={lineChartLabel}
-          formatValue={currencyTooltip}
-        />
-        {metrics.map((metric) => (
-          <MetricBarChart
-            key={metric.key}
-            metric={metric}
-            data={data}
-            barChartLabel={barChartLabel}
-          />
-        ))}
-      </div>
+      <CombinedFinanceLineChart
+        data={data}
+        metrics={metricsWithColors}
+        enabled={enabled}
+        onToggle={toggleMetric}
+        lineChartLabel={lineChartLabel}
+        legendHint={legendHint}
+        formatValue={currencyTooltip}
+      />
     </section>
   );
 }

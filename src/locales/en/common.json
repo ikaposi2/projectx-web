@@ -233,6 +233,7 @@
     "overviewChartsTitle": "Yearly overview",
     "overviewChartsEmpty": "No financial data for this year yet.",
     "overviewChartsLine": "Trend",
+    "overviewChartsLegendHint": "Click a metric to show or hide its line.",
     "overviewChartsBar": "By month",
     "overviewChartRevenue": "Revenue",
     "overviewChartCosts": "Costs",

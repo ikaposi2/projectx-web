@@ -233,6 +233,7 @@
     "overviewChartsTitle": "Jaaroverzicht",
     "overviewChartsEmpty": "Nog geen financiële data voor dit jaar.",
     "overviewChartsLine": "Trend",
+    "overviewChartsLegendHint": "Klik op een metriek om de lijn te tonen of te verbergen.",
     "overviewChartsBar": "Per maand",
     "overviewChartRevenue": "Omzet",
     "overviewChartCosts": "Kosten",

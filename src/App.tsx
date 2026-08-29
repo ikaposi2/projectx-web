@@ -18,7 +18,7 @@ import {
   emptyCatalogContent,
   type CatalogContentState,
 } from "./components/CatalogContentEditor";
-import { FinanceOverviewCharts } from "./components/FinanceOverviewCharts";
+import { FinanceOverviewCharts, FINANCE_LINE_COLORS } from "./components/FinanceOverviewCharts";
 import { buildFinanceMonthlySeries } from "./financeMetrics";
 import { consumeOidcCallback, clearOidcCallbackUrl, oidcRedirectUri, startOidcLogin, type OidcPublicConfig } from "./oidc";
 
@@ -3770,22 +3770,22 @@ export default function App() {
   const financeChartMetrics = useMemo(
     () =>
       [
-        { key: "revenue" as const, title: t("finance.overviewChartRevenue"), color: "#9ed4ff" },
-        { key: "costs" as const, title: t("finance.overviewChartCosts"), color: "#d4a84b" },
+        { key: "revenue" as const, title: t("finance.overviewChartRevenue"), color: FINANCE_LINE_COLORS.revenue },
+        { key: "costs" as const, title: t("finance.overviewChartCosts"), color: FINANCE_LINE_COLORS.costs },
         {
           key: "grossProfit" as const,
           title: t("finance.overviewChartGrossProfit"),
-          color: "#5cba8a",
+          color: FINANCE_LINE_COLORS.grossProfit,
         },
         {
           key: "netProfit" as const,
           title: t("finance.overviewChartNetProfit"),
-          color: "#8eb8e8",
+          color: FINANCE_LINE_COLORS.netProfit,
         },
         {
           key: "funnel" as const,
           title: t("finance.overviewChartFunnel"),
-          color: "#6aa4e0",
+          color: FINANCE_LINE_COLORS.funnel,
         },
       ] as const,
     [t],
@@ -4934,7 +4934,7 @@ export default function App() {
                       metrics={[...financeChartMetrics]}
                       yearLabel={t("finance.overviewChartsTitle")}
                       lineChartLabel={t("finance.overviewChartsLine")}
-                      barChartLabel={t("finance.overviewChartsBar")}
+                      legendHint={t("finance.overviewChartsLegendHint")}
                       emptyLabel={t("finance.overviewChartsEmpty")}
                       currencyTooltip={(value) =>
                         t("finance.overviewChartTooltip", { eur: value.toFixed(2) })
