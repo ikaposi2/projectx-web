@@ -48,15 +48,18 @@
     },
     "sync": {
       "title": "Zammad sync",
-      "intro": "Reconcile ProjectX projects with Zammad groups. Missing projects are created; groups for removed projects are deleted.",
+      "intro": "Reconcile ProjectX with Zammad: projects become ticket groups; removed customers lose their organization.",
+      "whereToLook": "In Zammad open Admin → Groups to see project groups (named Customer · Project). Customers appear under Admin → Organizations.",
       "button": "Sync from ProjectX to Zammad",
       "running": "Syncing…",
       "summary": "Last sync result:",
       "projectsInProjectx": "{{count}} projects in ProjectX",
-      "created": "{{count}} created in Zammad",
-      "updated": "{{count}} updated in Zammad",
-      "deleted": "{{count}} deleted from Zammad",
-      "unchanged": "{{count}} unchanged",
+      "created": "{{count}} groups created in Zammad",
+      "updated": "{{count}} groups updated in Zammad",
+      "deleted": "{{count}} groups deleted from Zammad",
+      "unchanged": "{{count}} groups unchanged",
+      "organizationsDeleted": "{{count}} customer organizations removed from Zammad",
+      "agentAccessUpdates": "{{count}} agent group permissions updated",
       "error": "Sync failed. Check that automation and Zammad are configured."
     }
   },

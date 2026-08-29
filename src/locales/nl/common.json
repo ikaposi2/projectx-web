@@ -48,15 +48,18 @@
     },
     "sync": {
       "title": "Zammad-synchronisatie",
-      "intro": "Stem ProjectX-projecten af op Zammad-groepen. Ontbrekende projecten worden aangemaakt; groepen van verwijderde projecten worden verwijderd.",
+      "intro": "Stem ProjectX af op Zammad: projecten worden ticket-groepen; verwijderde klanten verliezen hun organisatie.",
+      "whereToLook": "In Zammad: Admin → Groups voor projectgroepen (naam Klant · Project). Klanten staan onder Admin → Organizations.",
       "button": "Synchroniseer van ProjectX naar Zammad",
       "running": "Bezig met synchroniseren…",
       "summary": "Resultaat laatste sync:",
       "projectsInProjectx": "{{count}} projecten in ProjectX",
-      "created": "{{count}} aangemaakt in Zammad",
-      "updated": "{{count}} bijgewerkt in Zammad",
-      "deleted": "{{count}} verwijderd uit Zammad",
-      "unchanged": "{{count}} ongewijzigd",
+      "created": "{{count}} groepen aangemaakt in Zammad",
+      "updated": "{{count}} groepen bijgewerkt in Zammad",
+      "deleted": "{{count}} groepen verwijderd uit Zammad",
+      "unchanged": "{{count}} groepen ongewijzigd",
+      "organizationsDeleted": "{{count}} klantorganisaties verwijderd uit Zammad",
+      "agentAccessUpdates": "{{count}} agent-groepsrechten bijgewerkt",
       "error": "Synchronisatie mislukt. Controleer of automation en Zammad zijn geconfigureerd."
     }
   },

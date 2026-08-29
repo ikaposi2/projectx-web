@@ -708,6 +708,8 @@ type ZammadProjectSyncResult = {
   updated: number;
   deleted: number;
   unchanged: number;
+  organizations_deleted?: number;
+  agent_access_updates?: number;
 };
 
 type ServiceHealthState = {
@@ -4854,6 +4856,7 @@ export default function App() {
                   <div>
                     <h1>{t("system.sync.title")}</h1>
                     <p>{t("system.sync.intro")}</p>
+                    <p className="muted">{t("system.sync.whereToLook")}</p>
                   </div>
                   <button
                     type="button"
@@ -4874,6 +4877,20 @@ export default function App() {
                       <li>{t("system.sync.updated", { count: zammadSyncResult.updated })}</li>
                       <li>{t("system.sync.deleted", { count: zammadSyncResult.deleted })}</li>
                       <li>{t("system.sync.unchanged", { count: zammadSyncResult.unchanged })}</li>
+                      {zammadSyncResult.organizations_deleted ? (
+                        <li>
+                          {t("system.sync.organizationsDeleted", {
+                            count: zammadSyncResult.organizations_deleted,
+                          })}
+                        </li>
+                      ) : null}
+                      {zammadSyncResult.agent_access_updates ? (
+                        <li>
+                          {t("system.sync.agentAccessUpdates", {
+                            count: zammadSyncResult.agent_access_updates,
+                          })}
+                        </li>
+                      ) : null}
                     </ul>
                   </div>
                 ) : null}
