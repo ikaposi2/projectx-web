@@ -383,7 +383,7 @@ type AppView =
   | "unavailable"
   | "planning"
   | "systemStatus";
-type FinancePanel = "operational" | "billing" | "costs" | "kpis" | "funnel" | null;
+type FinancePanel = "overview" | "operational" | "billing" | "costs" | "kpis" | "funnel";
 type KpiHorizon = "monthly" | "quarterly" | "annually";
 type NavIconName =
   | "home"
@@ -1109,7 +1109,7 @@ export default function App() {
   const [billingCandidates, setBillingCandidates] = useState<BillingCandidate[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [financeStatus, setFinanceStatus] = useState<string | null>(null);
-  const [financePanel, setFinancePanel] = useState<FinancePanel>(null);
+  const [financePanel, setFinancePanel] = useState<FinancePanel>("overview");
   const [kpiHorizon, setKpiHorizon] = useState<KpiHorizon>("monthly");
   const [kpiAnchorMonth, setKpiAnchorMonth] = useState(() => monthKey(new Date()));
   const [financeChartYear, setFinanceChartYear] = useState(() => new Date().getFullYear());
@@ -3770,6 +3770,7 @@ export default function App() {
   const financeChartMetrics = useMemo(
     () =>
       [
+        { key: "revenue" as const, title: t("finance.overviewChartRevenue"), color: "#9ed4ff" },
         { key: "costs" as const, title: t("finance.overviewChartCosts"), color: "#d4a84b" },
         {
           key: "grossProfit" as const,
@@ -4904,6 +4905,7 @@ export default function App() {
                   <div className="finance-hub-actions">
                     {(
                       [
+                        ["overview", "finance.panelOverview"],
                         ["funnel", "finance.panelFunnel"],
                         ["operational", "finance.panelOperational"],
                         ["billing", "finance.panelBilling"],
@@ -4915,7 +4917,7 @@ export default function App() {
                         key={id}
                         type="button"
                         className={financePanel === id ? "primary" : ""}
-                        onClick={() => setFinancePanel((p) => (p === id ? null : id))}
+                        onClick={() => setFinancePanel(id)}
                       >
                         {t(label)}
                       </button>
@@ -4923,21 +4925,23 @@ export default function App() {
                   </div>
                 </section>
 
-                <section className="panel wide">
-                  <FinanceOverviewCharts
-                    year={financeChartYear}
-                    onYearChange={setFinanceChartYear}
-                    data={financeChartData}
-                    metrics={[...financeChartMetrics]}
-                    yearLabel={t("finance.overviewChartsTitle")}
-                    lineChartLabel={t("finance.overviewChartsLine")}
-                    barChartLabel={t("finance.overviewChartsBar")}
-                    emptyLabel={t("finance.overviewChartsEmpty")}
-                    currencyTooltip={(value) =>
-                      t("finance.overviewChartTooltip", { eur: value.toFixed(2) })
-                    }
-                  />
-                </section>
+                {financePanel === "overview" ? (
+                  <section className="panel wide">
+                    <FinanceOverviewCharts
+                      year={financeChartYear}
+                      onYearChange={setFinanceChartYear}
+                      data={financeChartData}
+                      metrics={[...financeChartMetrics]}
+                      yearLabel={t("finance.overviewChartsTitle")}
+                      lineChartLabel={t("finance.overviewChartsLine")}
+                      barChartLabel={t("finance.overviewChartsBar")}
+                      emptyLabel={t("finance.overviewChartsEmpty")}
+                      currencyTooltip={(value) =>
+                        t("finance.overviewChartTooltip", { eur: value.toFixed(2) })
+                      }
+                    />
+                  </section>
+                ) : null}
 
                 {financePanel === "funnel" ? (
                   <section className="panel wide">

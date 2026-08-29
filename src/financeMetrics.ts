@@ -1,6 +1,7 @@
 export type FinanceMonthPoint = {
   month: string;
   label: string;
+  revenue: number;
   costs: number;
   grossProfit: number;
   netProfit: number;
@@ -73,13 +74,15 @@ export function buildFinanceMonthlySeries<T extends CompensationLike>(params: {
       .reduce((s, c) => s + params.personnelCostForEntry(c), 0);
     const nonPersonnelCost = nonPersonnelForMonth(params.monthlyCosts, month);
     const costs = personnelCost + nonPersonnelCost;
-    const grossProfit = revenueNetPaid - costs;
+    const revenue = revenueNetPaid;
+    const grossProfit = revenue - costs;
     const projectedTax = Math.max(0, grossProfit * params.corpTaxRate);
     const netProfit = grossProfit - projectedTax;
     const funnel = params.funnelByMonth.get(month) ?? 0;
     return {
       month,
       label: params.monthLabels[idx] ?? month.slice(5),
+      revenue,
       costs,
       grossProfit,
       netProfit,
