@@ -360,6 +360,8 @@
     "personnelProposalsEmpty": "Geen goedgekeurde uren voor externe resources deze maand.",
     "personnelProposalLine": "{{hours}}u × €{{rate}} = €{{amount}} + BTW €{{vat}} → totaal €{{total}}",
     "personnelProposalRef": "Voorstel {{number}}",
+    "personnelProposalSupplemental": " — extra niet-gefactureerde uren hieronder.",
+    "generatePersonnelProposalSupplemental": "Aanvullend voorstel maken",
     "generatePersonnelProposal": "Maken",
     "generatingProposal": "Bezig…",
     "personnelProposalGenerated": "Factuurvoorstel aangemaakt — PDF geopend.",

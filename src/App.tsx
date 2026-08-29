@@ -5524,6 +5524,7 @@ export default function App() {
                               {row.already_generated && row.invoice_number ? (
                                 <div className="muted">
                                   {t("finance.personnelProposalRef", { number: row.invoice_number })}
+                                  {t("finance.personnelProposalSupplemental")}
                                 </div>
                               ) : null}
                             </div>
@@ -5535,18 +5536,19 @@ export default function App() {
                                 >
                                   {t("finance.viewPdf")}
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="primary"
-                                  disabled={generatingProposalFor === row.partner_id}
-                                  onClick={() => void generatePersonnelProposal(row.partner_id)}
-                                >
-                                  {generatingProposalFor === row.partner_id
-                                    ? t("finance.generatingProposal")
+                              ) : null}
+                              <button
+                                type="button"
+                                className="primary"
+                                disabled={generatingProposalFor === row.partner_id}
+                                onClick={() => void generatePersonnelProposal(row.partner_id)}
+                              >
+                                {generatingProposalFor === row.partner_id
+                                  ? t("finance.generatingProposal")
+                                  : row.already_generated
+                                    ? t("finance.generatePersonnelProposalSupplemental")
                                     : t("finance.generatePersonnelProposal")}
-                                </button>
-                              )}
+                              </button>
                             </div>
                           </li>
                         ))}

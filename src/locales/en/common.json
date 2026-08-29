@@ -360,6 +360,8 @@
     "personnelProposalsEmpty": "No approved hours for external resources this month.",
     "personnelProposalLine": "{{hours}}h × €{{rate}} = €{{amount}} + VAT €{{vat}} → total €{{total}}",
     "personnelProposalRef": "Draft invoice {{number}}",
+    "personnelProposalSupplemental": " — additional unbilled hours below.",
+    "generatePersonnelProposalSupplemental": "Generate supplemental draft",
     "generatePersonnelProposal": "Generate",
     "generatingProposal": "Generating…",
     "personnelProposalGenerated": "Draft invoice created — PDF opened.",
