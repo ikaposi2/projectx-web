@@ -1126,6 +1126,7 @@ export default function App() {
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const customerFormRef = useRef<HTMLFormElement | null>(null);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [draftHours, setDraftHours] = useState<Record<string, string>>({});
@@ -1946,6 +1947,11 @@ export default function App() {
   }, [token, view, customerQuery, searchCustomers, loadMsps]);
 
   useEffect(() => {
+    if (!creatingCustomer && !editingCustomerId) return;
+    customerFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [creatingCustomer, editingCustomerId]);
+
+  useEffect(() => {
     setDraftHours((prev) => {
       const next: Record<string, string> = {};
       for (const row of rows) {
@@ -2247,7 +2253,7 @@ export default function App() {
   function startCreateCustomer() {
     setEditingCustomerId(null);
     setCreatingCustomer(true);
-    setCustomerForm(emptyCustomerForm);
+    setCustomerForm({ ...emptyCustomerForm, name: customerQuery.trim() });
     setCustomerError(null);
   }
 
@@ -2260,7 +2266,11 @@ export default function App() {
 
   async function saveCustomer(e: FormEvent) {
     e.preventDefault();
-    if (!token || !customerForm.name.trim() || !customerForm.contact_name.trim()) return;
+    if (!token) return;
+    if (!customerForm.name.trim() || !customerForm.contact_name.trim()) {
+      setCustomerError(t("customer.requiredFields"));
+      return;
+    }
     if (!customerForm.contact_email.trim() && !customerForm.contact_phone.trim()) {
       setCustomerError(t("customer.channelRequired"));
       return;
@@ -4582,11 +4592,13 @@ export default function App() {
                     <h1>{t("customer.title")}</h1>
                     <p>{t("customer.intro")}</p>
                   </div>
-                  <div className="actions">
-                    <button type="button" className="primary" onClick={() => startCreateCustomer()}>
-                      {t("customer.add")}
-                    </button>
-                  </div>
+                  {!(creatingCustomer || editingCustomerId) ? (
+                    <div className="actions">
+                      <button type="button" className="primary" onClick={() => startCreateCustomer()}>
+                        {t("customer.add")}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="customer-search">
@@ -4670,7 +4682,11 @@ export default function App() {
                 </div>
 
                 {creatingCustomer || editingCustomerId ? (
-                <form className="customer-form" onSubmit={(e) => void saveCustomer(e)}>
+                <form
+                  ref={customerFormRef}
+                  className="customer-form"
+                  onSubmit={(e) => void saveCustomer(e)}
+                >
                   <h2>{editingCustomerId ? t("customer.editTitle") : t("customer.addTitle")}</h2>
                   <fieldset className="fields-required">
                     <legend>{t("customer.sectionCompany")}</legend>
@@ -4971,7 +4987,7 @@ export default function App() {
 
                   <div className="actions">
                     <button className="primary" type="submit">
-                      {editingCustomerId ? t("customer.save") : t("customer.add")}
+                      {t("customer.save")}
                     </button>
                     <button type="button" onClick={cancelEditCustomer}>
                       {t("customer.cancel")}

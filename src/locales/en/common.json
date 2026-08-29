@@ -163,6 +163,7 @@
     "contactPhone": "Phone",
     "channelHint": "Provide at least an email or a phone number.",
     "channelRequired": "Email or phone is required.",
+    "requiredFields": "Company name and primary contact name are required.",
     "addressLine1": "Address",
     "addressLine2": "Address line 2",
     "postalCode": "Postal code",

@@ -163,6 +163,7 @@
     "contactPhone": "Telefoon",
     "channelHint": "Vul minstens e-mail of telefoon in.",
     "channelRequired": "E-mail of telefoon is verplicht.",
+    "requiredFields": "Bedrijfsnaam en naam primair contact zijn verplicht.",
     "addressLine1": "Adres",
     "addressLine2": "Adresregel 2",
     "postalCode": "Postcode",
