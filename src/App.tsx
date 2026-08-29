@@ -11,6 +11,7 @@ import {
   setAuditSessionId,
   setAuditUser,
 } from "./audit";
+import { clearStoredSession, isTokenExpired } from "./auth";
 import {
   CatalogContentEditor,
   contentFromDefinition,
@@ -1323,11 +1324,6 @@ export default function App() {
       .then((r) => r.json())
       .then((c: AuthConfig) => setAuthConfig(c))
       .catch(() => setAuthConfig({ auth_mode: "local" }));
-
-    void fetchAllServiceHealth().then((health) => {
-      setServiceHealth(health);
-      setServiceHealthCheckedAt(new Date().toISOString());
-    });
   }, []);
 
   useEffect(() => {
@@ -1348,6 +1344,14 @@ export default function App() {
       setAuditSessionId(null);
       return;
     }
+    if (isTokenExpired(token)) {
+      clearStoredSession();
+      setToken(null);
+      setAuditUser(null);
+      setAuditSessionId(null);
+      setError("Session expired — sign in again.");
+      return;
+    }
     setAuditSessionId(sessionIdFromToken(token));
     void fetch(`${API}/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -1361,10 +1365,11 @@ export default function App() {
         setAuditUser(u);
       })
       .catch(() => {
-        localStorage.removeItem("projectx.token");
+        clearStoredSession();
         setToken(null);
         setAuditUser(null);
         setAuditSessionId(null);
+        setError("Session expired — sign in again.");
       });
   }, [token]);
 
@@ -1381,6 +1386,8 @@ export default function App() {
       span.setAttribute("auth.method", "oidc");
       span.setAttribute("identity.provider", "keycloak");
       span.setAttribute("peer.service", "projectX-identity");
+      clearStoredSession();
+      setToken(null);
       try {
         const res = await fetch(`${API}/auth/oidc/callback`, {
           method: "POST",
@@ -4049,10 +4056,6 @@ export default function App() {
             </form>
             )}
             {error && <p className="status error">{error}</p>}
-            <div className="login-service-status">
-              <p className="login-service-status-title">{t("system.statusTitle")}</p>
-              <ServiceHealthGrid health={serviceHealth} label={t} compact />
-            </div>
           </section>
         </main>
       ) : (
