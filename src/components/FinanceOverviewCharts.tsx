@@ -26,8 +26,8 @@ type ChartPoint = {
   value: number;
 };
 
-const CHART_HEIGHT = 180;
-const CHART_PAD = { top: 14, right: 10, bottom: 28, left: 52 };
+const CHART_HEIGHT = 200;
+const CHART_PAD = { top: 14, right: 8, bottom: 30, left: 46 };
 
 function euroAxis(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `€${(value / 1_000_000).toFixed(1)}M`;
@@ -192,7 +192,7 @@ function FinanceBarChart({
         const pct = Math.max(magnitude === 0 ? 0 : 4, (magnitude / max) * 100);
         return (
           <div key={row.label} className="funnel-bar-col">
-            <div className="funnel-bar-meta muted">{formatValue(row.value)}</div>
+            <div className="funnel-bar-meta muted">{euroAxis(row.value)}</div>
             <div className="funnel-bar-track">
               <div
                 className="funnel-bar-fill"
@@ -224,7 +224,7 @@ function MetricCharts({
   formatValue: (value: number) => string;
 }) {
   const chartData: ChartPoint[] = data.map((row) => ({
-    label: row.label,
+    label: String(Number(row.month.slice(5, 7))),
     value: row[metric.key],
   }));
 

@@ -1134,8 +1134,8 @@ body {
 
 .finance-charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
 }
 
 .finance-chart-card {
@@ -1176,6 +1176,42 @@ body {
 
 .finance-metric-bar-chart {
   min-height: 10rem;
+  overflow-x: hidden;
+  gap: 0.2rem;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.finance-metric-bar-chart .funnel-bar-col {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+.finance-metric-bar-chart .funnel-bar-meta {
+  font-size: 0.62rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-metric-bar-chart .funnel-bar-label {
+  font-size: 0.68rem;
+}
+
+.finance-metric-bar-chart .funnel-bar-track {
+  height: 7.5rem;
+}
+
+@media (max-width: 480px) {
+  .finance-metric-bar-chart .funnel-bar-meta {
+    display: none;
+  }
+
+  .finance-chart-axis {
+    font-size: 9px;
+  }
 }
 
 .finance-chart-block {
