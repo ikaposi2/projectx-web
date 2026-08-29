@@ -382,7 +382,8 @@ type AppView =
   | "resources"
   | "unavailable"
   | "planning"
-  | "systemStatus";
+  | "systemStatus"
+  | "systemSync";
 type FinancePanel = "overview" | "operational" | "billing" | "costs" | "kpis" | "funnel";
 type KpiHorizon = "monthly" | "quarterly" | "annually";
 type NavIconName =
@@ -405,7 +406,8 @@ type NavIconName =
   | "flowClose"
   | "flowBill"
   | "system"
-  | "status";
+  | "status"
+  | "sync";
 
 type ReportSummary = {
   from_date: string;
@@ -564,6 +566,15 @@ function NavIcon({ name }: { name: NavIconName }) {
           <path d="M4 12h2l2-5 4 10 2-5h6" />
         </svg>
       );
+    case "sync":
+      return (
+        <svg {...common}>
+          <path d="M4 12a8 8 0 0 1 13.7-5.7" />
+          <path d="M20 7v5h-5" />
+          <path d="M20 12a8 8 0 0 1-13.7 5.7" />
+          <path d="M4 17v-5h5" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -689,6 +700,15 @@ const PARTNER_API = "/api/partner";
 const CUSTOMER_API = "/api/customer";
 const FINANCE_API = "/api/finance";
 const CATALOG_API = "/api/catalog";
+const AUTOMATION_API = "/api/automation";
+
+type ZammadProjectSyncResult = {
+  projects_in_projectx: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+};
 
 type ServiceHealthState = {
   status: string;
@@ -703,6 +723,7 @@ const MICROSERVICES = [
   { key: "customer", api: CUSTOMER_API, icon: "customers" as const, labelKey: "system.services.customer" },
   { key: "catalog", api: CATALOG_API, icon: "catalog" as const, labelKey: "system.services.catalog" },
   { key: "finance", api: FINANCE_API, icon: "finance" as const, labelKey: "system.services.finance" },
+  { key: "automation", api: AUTOMATION_API, icon: "sync" as const, labelKey: "system.services.automation" },
 ] as const;
 
 async function fetchAllServiceHealth(): Promise<Record<string, ServiceHealthState>> {
@@ -1057,6 +1078,9 @@ export default function App() {
   const [serviceHealth, setServiceHealth] = useState<Record<string, ServiceHealthState>>({});
   const [serviceHealthCheckedAt, setServiceHealthCheckedAt] = useState<string | null>(null);
   const [serviceHealthRefreshing, setServiceHealthRefreshing] = useState(false);
+  const [zammadSyncRunning, setZammadSyncRunning] = useState(false);
+  const [zammadSyncResult, setZammadSyncResult] = useState<ZammadProjectSyncResult | null>(null);
+  const [zammadSyncError, setZammadSyncError] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem("projectx.token"));
   const [user, setUser] = useState<User | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -3889,6 +3913,29 @@ export default function App() {
     }
   }
 
+  async function syncProjectsToZammad() {
+    if (!token) return;
+    setZammadSyncRunning(true);
+    setZammadSyncError(null);
+    setZammadSyncResult(null);
+    try {
+      const response = await fetch(`${AUTOMATION_API}/sync/zammad/projects`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setZammadSyncError(typeof payload.detail === "string" ? payload.detail : t("system.sync.error"));
+        return;
+      }
+      setZammadSyncResult(payload as ZammadProjectSyncResult);
+    } catch {
+      setZammadSyncError(t("system.sync.error"));
+    } finally {
+      setZammadSyncRunning(false);
+    }
+  }
+
   function openProjectCreate() {
     setCreatingProject(true);
     setEditingProjectId(null);
@@ -4239,7 +4286,7 @@ export default function App() {
               <button
                 type="button"
                 className={
-                  activeView === "systemStatus"
+                  activeView === "systemStatus" || activeView === "systemSync"
                     ? "nav-group-label nav-item active"
                     : "nav-group-label nav-item"
                 }
@@ -4258,6 +4305,17 @@ export default function App() {
                 <NavIcon name="status" />
                 <span className="nav-label">{t("nav.systemStatus")}</span>
               </button>
+              {isManager ? (
+                <button
+                  type="button"
+                  className={activeView === "systemSync" ? "nav-item nav-subitem active" : "nav-item nav-subitem"}
+                  onClick={() => goToView("systemSync")}
+                  title={t("nav.systemSync")}
+                >
+                  <NavIcon name="sync" />
+                  <span className="nav-label">{t("nav.systemSync")}</span>
+                </button>
+              ) : null}
             </div>
           </nav>
 
@@ -4787,6 +4845,38 @@ export default function App() {
                   </p>
                 ) : null}
                 <ServiceHealthGrid health={serviceHealth} label={t} />
+              </section>
+            ) : null}
+
+            {activeView === "systemSync" && isManager ? (
+              <section className="panel wide">
+                <div className="week-nav">
+                  <div>
+                    <h1>{t("system.sync.title")}</h1>
+                    <p>{t("system.sync.intro")}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => void syncProjectsToZammad()}
+                    disabled={zammadSyncRunning}
+                  >
+                    {zammadSyncRunning ? t("system.sync.running") : t("system.sync.button")}
+                  </button>
+                </div>
+                {zammadSyncError ? <p className="status error">{zammadSyncError}</p> : null}
+                {zammadSyncResult ? (
+                  <div className="sync-results">
+                    <p className="muted">{t("system.sync.summary")}</p>
+                    <ul className="sync-stats">
+                      <li>{t("system.sync.projectsInProjectx", { count: zammadSyncResult.projects_in_projectx })}</li>
+                      <li>{t("system.sync.created", { count: zammadSyncResult.created })}</li>
+                      <li>{t("system.sync.updated", { count: zammadSyncResult.updated })}</li>
+                      <li>{t("system.sync.deleted", { count: zammadSyncResult.deleted })}</li>
+                      <li>{t("system.sync.unchanged", { count: zammadSyncResult.unchanged })}</li>
+                    </ul>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 

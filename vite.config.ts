@@ -41,6 +41,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/finance/, ""),
       },
+      "/api/automation": {
+        target: "http://127.0.0.1:8008",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/automation/, ""),
+      },
     },
   },
 });

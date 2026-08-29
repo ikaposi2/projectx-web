@@ -293,6 +293,12 @@ body {
   gap: 0.55rem;
 }
 
+.sync-stats {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  line-height: 1.6;
+}
+
 .service-card {
   display: flex;
   align-items: center;

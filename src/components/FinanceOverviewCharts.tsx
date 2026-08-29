@@ -9,13 +9,13 @@ export type MetricConfig = {
   color: string;
 };
 
-/** Distinct line colors on the dark finance theme (avoid similar blues). */
+/** Distinct line colors on the dark finance theme (max hue separation). */
 export const FINANCE_LINE_COLORS: Record<MetricKey, string> = {
-  revenue: "#5eb8ff",
-  costs: "#f0a845",
-  grossProfit: "#66d19a",
-  netProfit: "#c792ff",
-  funnel: "#ff7eb3",
+  revenue: "#38bdf8",
+  costs: "#fb923c",
+  grossProfit: "#4ade80",
+  netProfit: "#facc15",
+  funnel: "#f87171",
 };
 
 type FinanceOverviewChartsProps = {
@@ -184,7 +184,8 @@ function CombinedFinanceLineChart({
                         d={linePath}
                         fill="none"
                         stroke={metric.color}
-                        strokeWidth={2.75}
+                        strokeWidth={metric.key === "netProfit" ? 2.25 : 2.75}
+                        strokeDasharray={metric.key === "funnel" ? "7 5" : undefined}
                         strokeLinejoin="round"
                         strokeLinecap="round"
                       />
@@ -322,11 +323,7 @@ export function FinanceOverviewCharts({
   );
 
   const toggleMetric = (key: MetricKey) => {
-    setEnabled((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (!Object.values(next).some(Boolean)) return prev;
-      return next;
-    });
+    setEnabled((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (

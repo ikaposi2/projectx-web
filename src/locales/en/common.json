@@ -27,7 +27,8 @@
     "customers": "Customers",
     "reporting": "Reporting",
     "system": "System",
-    "systemStatus": "Microservice status"
+    "systemStatus": "Microservice status",
+    "systemSync": "Sync"
   },
   "system": {
     "statusTitle": "Microservice status",
@@ -42,7 +43,21 @@
       "partner": "Partner",
       "customer": "Customer",
       "catalog": "Catalog",
-      "finance": "Finance"
+      "finance": "Finance",
+      "automation": "Automation"
+    },
+    "sync": {
+      "title": "Zammad sync",
+      "intro": "Reconcile ProjectX projects with Zammad groups. Missing projects are created; groups for removed projects are deleted.",
+      "button": "Sync from ProjectX to Zammad",
+      "running": "Syncing…",
+      "summary": "Last sync result:",
+      "projectsInProjectx": "{{count}} projects in ProjectX",
+      "created": "{{count}} created in Zammad",
+      "updated": "{{count}} updated in Zammad",
+      "deleted": "{{count}} deleted from Zammad",
+      "unchanged": "{{count}} unchanged",
+      "error": "Sync failed. Check that automation and Zammad are configured."
     }
   },
   "home": {

@@ -27,7 +27,8 @@
     "customers": "Klanten",
     "reporting": "Rapportage",
     "system": "Systeem",
-    "systemStatus": "Microservice-status"
+    "systemStatus": "Microservice-status",
+    "systemSync": "Synchronisatie"
   },
   "system": {
     "statusTitle": "Microservice-status",
@@ -42,7 +43,21 @@
       "partner": "Partner",
       "customer": "Customer",
       "catalog": "Catalog",
-      "finance": "Finance"
+      "finance": "Finance",
+      "automation": "Automation"
+    },
+    "sync": {
+      "title": "Zammad-synchronisatie",
+      "intro": "Stem ProjectX-projecten af op Zammad-groepen. Ontbrekende projecten worden aangemaakt; groepen van verwijderde projecten worden verwijderd.",
+      "button": "Synchroniseer van ProjectX naar Zammad",
+      "running": "Bezig met synchroniseren…",
+      "summary": "Resultaat laatste sync:",
+      "projectsInProjectx": "{{count}} projecten in ProjectX",
+      "created": "{{count}} aangemaakt in Zammad",
+      "updated": "{{count}} bijgewerkt in Zammad",
+      "deleted": "{{count}} verwijderd uit Zammad",
+      "unchanged": "{{count}} ongewijzigd",
+      "error": "Synchronisatie mislukt. Controleer of automation en Zammad zijn geconfigureerd."
     }
   },
   "home": {
