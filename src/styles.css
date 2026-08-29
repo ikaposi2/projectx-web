@@ -1103,6 +1103,78 @@ body {
   line-height: 1.2;
 }
 
+.finance-overview-charts {
+  margin-top: 0.5rem;
+}
+
+.finance-overview-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.finance-overview-header h2 {
+  margin: 0;
+}
+
+.finance-overview-header label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.finance-overview-header input[type="number"] {
+  width: 5.5rem;
+}
+
+.finance-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.finance-chart-card {
+  padding: 0.85rem 1rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--border);
+  background: rgba(30, 42, 59, 0.55);
+}
+
+.finance-chart-card h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.finance-chart-block + .finance-chart-block {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(58, 76, 99, 0.65);
+}
+
+.finance-chart-block h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.finance-chart-tooltip {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.82rem;
+  box-shadow: var(--shadow);
+}
+
 .finance-project-card {
   width: 100%;
 }

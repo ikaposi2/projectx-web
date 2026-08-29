@@ -18,6 +18,8 @@ import {
   emptyCatalogContent,
   type CatalogContentState,
 } from "./components/CatalogContentEditor";
+import { FinanceOverviewCharts } from "./components/FinanceOverviewCharts";
+import { buildFinanceMonthlySeries } from "./financeMetrics";
 import { consumeOidcCallback, clearOidcCallbackUrl, oidcRedirectUri, startOidcLogin, type OidcPublicConfig } from "./oidc";
 
 const oidcTracer = trace.getTracer("projectX-web");
@@ -1110,6 +1112,7 @@ export default function App() {
   const [financePanel, setFinancePanel] = useState<FinancePanel>(null);
   const [kpiHorizon, setKpiHorizon] = useState<KpiHorizon>("monthly");
   const [kpiAnchorMonth, setKpiAnchorMonth] = useState(() => monthKey(new Date()));
+  const [financeChartYear, setFinanceChartYear] = useState(() => new Date().getFullYear());
   const [invoiceSearch, setInvoiceSearch] = useState({ q: "", date: "", id: "" });
   const [financeWeekStart, setFinanceWeekStart] = useState(() => startOfIsoWeek(new Date()));
   const [invoiceAgenda, setInvoiceAgenda] = useState<InvoiceAgendaItem[]>([]);
@@ -3730,6 +3733,62 @@ export default function App() {
   const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
+  const financeMonthLabels = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(i18n.language, { month: "short" });
+    return Array.from({ length: 12 }, (_, i) => fmt.format(new Date(2024, i, 1)));
+  }, [i18n.language]);
+  const funnelByMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of financeFunnel?.monthly_sold ?? []) {
+      map.set(row.month, row.value_eur);
+    }
+    return map;
+  }, [financeFunnel]);
+  const financeChartData = useMemo(
+    () =>
+      buildFinanceMonthlySeries({
+        year: financeChartYear,
+        monthLabels: financeMonthLabels,
+        invoices,
+        compensation,
+        monthlyCosts: allMonthlyCosts,
+        funnelByMonth,
+        corpTaxRate: CORP_TAX_RATE,
+        personnelCostForEntry: personnelCostBase,
+      }),
+    [
+      financeChartYear,
+      financeMonthLabels,
+      invoices,
+      compensation,
+      allMonthlyCosts,
+      funnelByMonth,
+      resources,
+      managedProjects,
+    ],
+  );
+  const financeChartMetrics = useMemo(
+    () =>
+      [
+        { key: "costs" as const, title: t("finance.overviewChartCosts"), color: "var(--warn)" },
+        {
+          key: "grossProfit" as const,
+          title: t("finance.overviewChartGrossProfit"),
+          color: "var(--ok)",
+        },
+        {
+          key: "netProfit" as const,
+          title: t("finance.overviewChartNetProfit"),
+          color: "var(--brand-primary)",
+        },
+        {
+          key: "funnel" as const,
+          title: t("finance.overviewChartFunnel"),
+          color: "var(--brand-accent)",
+        },
+      ] as const,
+    [t],
+  );
   const personnelInputVatByQuarter = (() => {
     const map = new Map<string, number>();
     for (const c of compensation) {
@@ -4862,6 +4921,22 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                </section>
+
+                <section className="panel wide">
+                  <FinanceOverviewCharts
+                    year={financeChartYear}
+                    onYearChange={setFinanceChartYear}
+                    data={financeChartData}
+                    metrics={[...financeChartMetrics]}
+                    yearLabel={t("finance.overviewChartsTitle")}
+                    lineChartLabel={t("finance.overviewChartsLine")}
+                    barChartLabel={t("finance.overviewChartsBar")}
+                    emptyLabel={t("finance.overviewChartsEmpty")}
+                    currencyTooltip={(value) =>
+                      t("finance.overviewChartTooltip", { eur: value.toFixed(2) })
+                    }
+                  />
                 </section>
 
                 {financePanel === "funnel" ? (
