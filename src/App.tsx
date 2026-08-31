@@ -180,6 +180,7 @@ type CompensationEffect = {
   amount_eur: number;
   can_undo: boolean;
   undo_blocked_reason?: string | null;
+  work_date?: string | null;
   updated_at?: string | null;
 };
 
@@ -1026,6 +1027,11 @@ function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** YYYY-MM with real month 01–12 (HTML month input can briefly emit values like 2026-0). */
+function isValidMonth(month: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+}
+
 function monthBoundsIso(month: string): { from: string; to: string } {
   const [ys, ms] = month.split("-");
   const y = Number(ys);
@@ -1590,7 +1596,9 @@ export default function App() {
   const loadFinance = useCallback(async () => {
     if (!token) return;
     const weekStartIso = toIsoDate(financeWeekStart);
-    const monthParam = billingMonth ? `?month=${encodeURIComponent(billingMonth)}` : "";
+    const monthParam = isValidMonth(billingMonth)
+      ? `?month=${encodeURIComponent(billingMonth)}`
+      : "";
     try {
       const [reserveRes, vatRes, compRes, invRes, candRes, companyRes, agendaRes, kickoffRes] =
         await Promise.all([
@@ -1638,7 +1646,7 @@ export default function App() {
   }, [token, financeWeekStart, billingMonth]);
 
   const loadMonthlyCosts = useCallback(async () => {
-    if (!token || !costMonth) return;
+    if (!token || !isValidMonth(costMonth)) return;
     try {
       const res = await fetch(`${FINANCE_API}/costs?month=${encodeURIComponent(costMonth)}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1651,7 +1659,7 @@ export default function App() {
   }, [token, costMonth]);
 
   const loadPersonnelCandidates = useCallback(async () => {
-    if (!token || !costMonth) return;
+    if (!token || !isValidMonth(costMonth)) return;
     try {
       const res = await fetch(
         `${FINANCE_API}/personnel-invoices/candidates?month=${encodeURIComponent(costMonth)}`,
@@ -1660,13 +1668,12 @@ export default function App() {
       if (!res.ok) throw new Error(await res.text());
       setPersonnelCandidates((await res.json()) as PersonnelCandidate[]);
     } catch (err) {
-      setPersonnelCandidates([]);
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }, [token, costMonth]);
 
   const loadPersonnelProposals = useCallback(async () => {
-    if (!token || !costMonth) return;
+    if (!token || !isValidMonth(costMonth)) return;
     try {
       const res = await fetch(
         `${FINANCE_API}/personnel-invoices?month=${encodeURIComponent(costMonth)}`,
@@ -1675,7 +1682,6 @@ export default function App() {
       if (!res.ok) throw new Error(await res.text());
       setPersonnelProposals((await res.json()) as FinanceInvoice[]);
     } catch (err) {
-      setPersonnelProposals([]);
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }, [token, costMonth]);
@@ -1695,7 +1701,7 @@ export default function App() {
   }, [token]);
 
   const loadReportSummary = useCallback(async () => {
-    if (!token || !reportMonth) return;
+    if (!token || !isValidMonth(reportMonth)) return;
     try {
       const { from, to } = monthBoundsIso(reportMonth);
       const res = await fetch(
@@ -3740,7 +3746,9 @@ export default function App() {
   });
   const costMonthPrefix = costMonth;
   const monthCompensation = compensation.filter((c) => {
-    if (!c.updated_at) return true;
+    const workMonth = (c.work_date || "").slice(0, 7);
+    if (workMonth) return workMonth === costMonthPrefix;
+    if (!c.updated_at) return false;
     return c.updated_at.startsWith(costMonthPrefix);
   });
   const billableMonthCost = monthCompensation
@@ -3749,6 +3757,15 @@ export default function App() {
   const nonBillableMonthCost = monthCompensation
     .filter((c) => c.classification === "approved_non_billable")
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
+  const todayIso = toIsoDate(new Date());
+  const pendingFutureBillableHours = monthCompensation
+    .filter(
+      (c) =>
+        c.classification !== "approved_non_billable" &&
+        Boolean(c.work_date) &&
+        (c.work_date as string) > todayIso,
+    )
+    .reduce((s, c) => s + c.hours, 0);
   const hoursByResourceMonth = (() => {
     const map = new Map<string, { name: string; billable: number; nonBillable: number }>();
     for (const c of monthCompensation) {
@@ -5698,7 +5715,16 @@ export default function App() {
                     <h3>{t("finance.personnelProposalsTitle")}</h3>
                     <p className="status">{t("finance.personnelProposalsIntro")}</p>
                     {personnelCandidates.length === 0 ? (
-                      <p className="status">{t("finance.personnelProposalsEmpty")}</p>
+                      <>
+                        <p className="status">{t("finance.personnelProposalsEmpty")}</p>
+                        {pendingFutureBillableHours > 0 ? (
+                          <p className="status muted">
+                            {t("finance.personnelProposalsFutureHours", {
+                              hours: pendingFutureBillableHours.toFixed(1),
+                            })}
+                          </p>
+                        ) : null}
+                      </>
                     ) : (
                       <ul className="entry-list">
                         {personnelCandidates.map((row) => (
