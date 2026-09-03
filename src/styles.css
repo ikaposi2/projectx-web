@@ -335,6 +335,17 @@ body {
   justify-content: center;
 }
 
+.project-row-ordered {
+  border-left: 3px solid var(--brand-primary);
+  padding-left: 0.55rem;
+  background: color-mix(in srgb, var(--brand-accent-soft) 55%, transparent);
+}
+
+.ordered-pill {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
 .side-nav .nav-item.active .nav-badge {
   background: rgba(16, 32, 51, 0.25);
   color: #102033;
@@ -1185,6 +1196,56 @@ body {
   color: var(--text);
 }
 
+.finance-ytd-totals {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.finance-ytd-totals h3 {
+  margin: 0 0 0.75rem;
+}
+
+.finance-ytd-grid {
+  margin: 0;
+}
+
+.pagination-actions {
+  margin-top: 0.75rem;
+  gap: 0.5rem;
+}
+
+.finance-ytd-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.draft-invoice-links {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+.draft-invoice-links li + li {
+  margin-top: 0.25rem;
+}
+
+button.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+}
+
+button.link-button:hover {
+  color: var(--text);
+}
+
 .funnel-bar-chart {
   display: flex;
   align-items: flex-end;
@@ -1361,6 +1422,30 @@ body {
   border-radius: 999px;
   border: 2px solid;
   flex: 0 0 auto;
+}
+
+.finance-legend-line.dashed {
+  border-style: dashed;
+}
+
+.finance-legend-bar {
+  display: block;
+  width: 0.65rem;
+  height: 0.85rem;
+  border-radius: 2px;
+  border: 2px solid;
+  flex: 0 0 auto;
+}
+
+.finance-legend-combo {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+}
+
+.finance-legend-combo .finance-legend-line {
+  width: 0.9rem;
 }
 
 .finance-legend-label.off {
