@@ -19,7 +19,7 @@ import {
   type CatalogContentState,
 } from "./components/CatalogContentEditor";
 import { FinanceOverviewCharts, FINANCE_LINE_COLORS } from "./components/FinanceOverviewCharts";
-import { buildFinanceMonthlySeries } from "./financeMetrics";
+import { buildFinanceMonthlySeries, cashCostsForMonths, cashRevenueForMonths, costCountsTowardKpi, financeYtdTotals } from "./financeMetrics";
 import { consumeOidcCallback, clearOidcCallbackUrl, oidcRedirectUri, startOidcLogin, type OidcPublicConfig } from "./oidc";
 
 const oidcTracer = trace.getTracer("projectX-web");
@@ -192,6 +192,7 @@ type FinanceInvoice = {
   project_name: string;
   customer_id: string | null;
   customer_name: string;
+  partner_id?: string | null;
   buyer_vat_id?: string | null;
   buyer_address?: string | null;
   seller_name: string;
@@ -206,6 +207,7 @@ type FinanceInvoice = {
   amount_eur: number;
   payment_terms_days: number;
   issued_at?: string | null;
+  paid_at?: string | null;
   due_date?: string | null;
   returned_at?: string | null;
   pdf_path?: string | null;
@@ -244,12 +246,16 @@ type MonthlyCost = {
   id: string;
   label: string;
   amount_eur: number;
+  vat_rate: number;
+  vat_eur: number;
   cadence: "one_off" | "recurring";
   start_month: string;
   end_month: string | null;
   notes: string | null;
   invoice_matched: boolean;
   invoice_paid: boolean;
+  paid_at?: string | null;
+  personnel_invoice_id?: string | null;
 };
 
 type CompanyProfile = {
@@ -385,7 +391,14 @@ type AppView =
   | "planning"
   | "systemStatus"
   | "systemSync";
-type FinancePanel = "overview" | "operational" | "billing" | "costs" | "kpis" | "funnel";
+type FinancePanel =
+  | "overview"
+  | "operational"
+  | "billing"
+  | "costs"
+  | "draft-invoices"
+  | "kpis"
+  | "funnel";
 type KpiHorizon = "monthly" | "quarterly" | "annually";
 type NavIconName =
   | "home"
@@ -714,6 +727,25 @@ function appointmentOverlapsDay(startsAt: string, endsAt: string, dayIso: string
 const CORP_TAX_RATE = 0.258;
 /** Dutch default VAT; personnel rates are stored ex-VAT. */
 const DEFAULT_VAT_RATE = 0.21;
+/** Stable id from partner DEFAULT_BUDGETS — unavailable/PTO, not personnel-invoiced. */
+const UNAVAILABLE_BUDGET_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+/** Customer billable + internally approved internal-budget hours (excl. unavailable/PTO). */
+function isPersonnelProposableHour(c: CompensationEffect): boolean {
+  if (c.classification !== "approved_non_billable") return true;
+  if (c.project_id === UNAVAILABLE_BUDGET_ID) return false;
+  return c.rate_eur > 0 || Math.abs(c.amount_eur) > 0;
+}
+
+/** Chargeback at €0/h is not a cost — hide from the costs panel. */
+function isChargebackWithCost(c: CompensationEffect): boolean {
+  return c.classification === "approved_non_billable" && (c.rate_eur > 0 || Math.abs(c.amount_eur) > 0);
+}
+
+function showInCostsCompensation(c: CompensationEffect): boolean {
+  if (c.classification !== "approved_non_billable") return true;
+  return isChargebackWithCost(c);
+}
 
 const API = "/api/identity";
 const TIME_API = "/api/time";
@@ -840,6 +872,31 @@ type Customer = {
   technical_contact_email: string | null;
   technical_contact_phone: string | null;
   notes: string | null;
+};
+
+type PaginatedPage<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+};
+
+type ProjectListItem = {
+  id: string;
+  customer_name: string;
+  name: string;
+  service_id: string;
+  service_version?: string | null;
+  status: string;
+  funnel_status: string;
+  engagement_type?: "fixed" | "tm";
+  contracted_hours: number;
+  remaining_hours: number;
+  fixed_price_eur: number;
+  consultancy_budget_eur: number;
+  kickoff_at?: string | null;
+  next_funnel?: string[];
 };
 
 const emptyCustomerForm = {
@@ -1064,40 +1121,20 @@ function kpiPeriodLabel(anchorMonth: string, horizon: KpiHorizon): string {
   return y;
 }
 
-/**
- * Non-personnel costs for a set of months.
- * One-offs counted when their month is in range; recurring counted × months active in range
- * (so a full quarter/year of an ongoing cost is ×3 / ×12).
- */
-function nonPersonnelForMonths(
-  costs: {
-    amount_eur: number;
-    cadence: string;
-    start_month: string;
-    end_month: string | null;
-  }[],
-  months: string[],
-): number {
-  if (months.length === 0) return 0;
-  const monthSet = new Set(months);
-  let sum = 0;
-  for (const c of costs) {
-    if (c.cadence === "one_off") {
-      if (monthSet.has(c.start_month)) sum += c.amount_eur || 0;
-      continue;
-    }
-    const active = months.filter(
-      (mo) => mo >= c.start_month && (!c.end_month || mo <= c.end_month),
-    ).length;
-    sum += (c.amount_eur || 0) * active;
-  }
-  return sum;
-}
-
 function isoInMonths(iso: string | null | undefined, months: string[]): boolean {
   if (!iso) return false;
   const key = iso.slice(0, 7);
   return months.includes(key);
+}
+
+function compensationInMonths(c: CompensationEffect, months: string[]): boolean {
+  const workMonth = (c.work_date || "").slice(0, 7);
+  if (workMonth) return months.includes(workMonth);
+  return isoInMonths(c.updated_at, months);
+}
+
+function customerSalesInvoice(inv: FinanceInvoice): boolean {
+  return inv.kind !== "personnel_proposal";
 }
 
 export default function App() {
@@ -1129,6 +1166,9 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [mspCustomers, setMspCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const [customerHasMore, setCustomerHasMore] = useState(false);
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [creatingCustomer, setCreatingCustomer] = useState(false);
@@ -1143,6 +1183,7 @@ export default function App() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [managedProjects, setManagedProjects] = useState<ProjectDetail[]>([]);
+  const [orderedProjectCount, setOrderedProjectCount] = useState(0);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [budgetForm, setBudgetForm] = useState({
     fixed_price_eur: "0",
@@ -1198,12 +1239,17 @@ export default function App() {
   const [otherCostForm, setOtherCostForm] = useState({
     label: "",
     amount: "",
+    vat_rate: "21",
     cadence: "one_off" as "one_off" | "recurring",
     start_month: "",
     end_month: "",
     notes: "",
   });
   const [costMonth, setCostMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [draftInvoiceMonth, setDraftInvoiceMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
@@ -1261,6 +1307,11 @@ export default function App() {
   const [projectCreateCustomerId, setProjectCreateCustomerId] = useState("");
   const [projectCreateCustomerQuery, setProjectCreateCustomerQuery] = useState("");
   const [projectCreateCustomers, setProjectCreateCustomers] = useState<Customer[]>([]);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [projectPage, setProjectPage] = useState(1);
+  const [projectSearchResults, setProjectSearchResults] = useState<ProjectListItem[]>([]);
+  const [projectTotal, setProjectTotal] = useState(0);
+  const [projectHasMore, setProjectHasMore] = useState(false);
   const [projectBillable, setProjectBillable] = useState<BillableCheck | null>(null);
   const [projectCreateServiceId, setProjectCreateServiceId] = useState("");
   const [projectCreateName, setProjectCreateName] = useState("");
@@ -1487,23 +1538,50 @@ export default function App() {
   }, []);
 
   const searchCustomers = useCallback(
-    async (query: string) => {
+    async (query: string, page = 1) => {
       if (!token) return;
       const term = query.trim();
-      if (!term) {
-        setCustomers([]);
-    setMspCustomers([]);
-        setCustomerError(null);
-        return;
-      }
+      const params = new URLSearchParams({ page: String(page), limit: "50" });
+      if (term) params.set("q", term);
       try {
-        const res = await fetch(`${CUSTOMER_API}/customers?q=${encodeURIComponent(term)}`, {
+        const res = await fetch(`${CUSTOMER_API}/customers?${params}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(await res.text());
-        setCustomers((await res.json()) as Customer[]);
+        const data = (await res.json()) as PaginatedPage<Customer>;
+        setCustomers(Array.isArray(data.items) ? data.items : []);
+        setCustomerPage(data.page ?? page);
+        setCustomerTotal(typeof data.total === "number" ? data.total : 0);
+        setCustomerHasMore(Boolean(data.has_more));
+        setCustomerError(null);
       } catch (err) {
         setCustomerError(err instanceof Error ? err.message : "error");
+        setCustomers([]);
+      }
+    },
+    [token],
+  );
+
+  const searchProjects = useCallback(
+    async (query: string, page = 1) => {
+      if (!token) return;
+      const term = query.trim();
+      const params = new URLSearchParams({ page: String(page), limit: "50" });
+      if (term) params.set("q", term);
+      try {
+        const res = await fetch(`${PROJECT_API}/projects?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = (await res.json()) as PaginatedPage<ProjectListItem>;
+        setProjectSearchResults(Array.isArray(data.items) ? data.items : []);
+        setProjectPage(data.page ?? page);
+        setProjectTotal(typeof data.total === "number" ? data.total : 0);
+        setProjectHasMore(Boolean(data.has_more));
+        setTimeError(null);
+      } catch (err) {
+        setTimeError(err instanceof Error ? err.message : "error");
+        setProjectSearchResults([]);
       }
     },
     [token],
@@ -1593,6 +1671,20 @@ export default function App() {
     }
   }, [token]);
 
+  const loadOrderedProjectCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${PROJECT_API}/projects/ordered-count`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { count: number };
+      setOrderedProjectCount(Number(data.count) || 0);
+    } catch {
+      /* non-blocking */
+    }
+  }, [token]);
+
   const loadFinance = useCallback(async () => {
     if (!token) return;
     const weekStartIso = toIsoDate(financeWeekStart);
@@ -1659,10 +1751,10 @@ export default function App() {
   }, [token, costMonth]);
 
   const loadPersonnelCandidates = useCallback(async () => {
-    if (!token || !isValidMonth(costMonth)) return;
+    if (!token || !isValidMonth(draftInvoiceMonth)) return;
     try {
       const res = await fetch(
-        `${FINANCE_API}/personnel-invoices/candidates?month=${encodeURIComponent(costMonth)}`,
+        `${FINANCE_API}/personnel-invoices/candidates?month=${encodeURIComponent(draftInvoiceMonth)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error(await res.text());
@@ -1670,13 +1762,13 @@ export default function App() {
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
-  }, [token, costMonth]);
+  }, [token, draftInvoiceMonth]);
 
   const loadPersonnelProposals = useCallback(async () => {
-    if (!token || !isValidMonth(costMonth)) return;
+    if (!token || !isValidMonth(draftInvoiceMonth)) return;
     try {
       const res = await fetch(
-        `${FINANCE_API}/personnel-invoices?month=${encodeURIComponent(costMonth)}`,
+        `${FINANCE_API}/personnel-invoices?month=${encodeURIComponent(draftInvoiceMonth)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error(await res.text());
@@ -1684,7 +1776,7 @@ export default function App() {
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
-  }, [token, costMonth]);
+  }, [token, draftInvoiceMonth]);
 
   const loadFinanceFunnel = useCallback(async () => {
     if (!token) return;
@@ -1830,7 +1922,16 @@ export default function App() {
     void loadManagedProjects();
     void loadCatalog();
     void loadResources();
-  }, [token, user, view, loadManagedProjects, loadCatalog, loadResources]);
+    void loadOrderedProjectCount();
+  }, [token, user, view, loadManagedProjects, loadCatalog, loadResources, loadOrderedProjectCount]);
+
+  useEffect(() => {
+    if (!token || !user) return;
+    if (!MANAGER_ROLES.has(user.role)) return;
+    void loadOrderedProjectCount();
+    const id = window.setInterval(() => void loadOrderedProjectCount(), 60_000);
+    return () => window.clearInterval(id);
+  }, [token, user, loadOrderedProjectCount]);
 
   useEffect(() => {
     if (!token || !user || view !== "reporting") return;
@@ -1841,13 +1942,31 @@ export default function App() {
   useEffect(() => {
     if (!token || !user || view !== "finance") return;
     if (!MANAGER_ROLES.has(user.role)) return;
+    if (financePanel !== "draft-invoices") return;
+    void loadPersonnelCandidates();
+    void loadPersonnelProposals();
+  }, [
+    token,
+    user,
+    view,
+    financePanel,
+    draftInvoiceMonth,
+    loadPersonnelCandidates,
+    loadPersonnelProposals,
+  ]);
+
+  useEffect(() => {
+    if (!token || !user || view !== "finance") return;
+    if (!MANAGER_ROLES.has(user.role)) return;
     void loadFinance();
     void loadManagedProjects();
     void loadResources();
     void loadMonthlyCosts();
     void loadAllMonthlyCosts();
-    void loadPersonnelCandidates();
-    void loadPersonnelProposals();
+    if (financePanel === "draft-invoices") {
+      void loadPersonnelCandidates();
+      void loadPersonnelProposals();
+    }
     void loadFinanceFunnel();
   }, [
     token,
@@ -1863,6 +1982,8 @@ export default function App() {
     loadPersonnelProposals,
     loadFinanceFunnel,
     costMonth,
+    draftInvoiceMonth,
+    financePanel,
   ]);
 
   useEffect(() => {
@@ -1900,11 +2021,12 @@ export default function App() {
     const handle = window.setTimeout(async () => {
       try {
         const res = await fetch(
-          `${CUSTOMER_API}/customers?q=${encodeURIComponent(projectCreateCustomerQuery.trim())}`,
+          `${CUSTOMER_API}/customers?q=${encodeURIComponent(projectCreateCustomerQuery.trim())}&limit=50`,
           { headers: { Authorization: `Bearer ${token}` } },
         );
         if (!res.ok) return;
-        setProjectCreateCustomers((await res.json()) as Customer[]);
+        const data = (await res.json()) as PaginatedPage<Customer>;
+        setProjectCreateCustomers(Array.isArray(data.items) ? data.items : []);
       } catch {
         setProjectCreateCustomers([]);
       }
@@ -1947,10 +2069,18 @@ export default function App() {
     if (!token || view !== "customers") return;
     void loadMsps();
     const handle = window.setTimeout(() => {
-      void searchCustomers(customerQuery);
+      void searchCustomers(customerQuery, customerPage);
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [token, view, customerQuery, searchCustomers, loadMsps]);
+  }, [token, view, customerQuery, customerPage, searchCustomers, loadMsps]);
+
+  useEffect(() => {
+    if (!token || view !== "projects" || creatingProject) return;
+    const handle = window.setTimeout(() => {
+      void searchProjects(projectQuery, projectPage);
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [token, view, creatingProject, projectQuery, projectPage, searchProjects]);
 
   useEffect(() => {
     if (!creatingCustomer && !editingCustomerId) return;
@@ -2339,7 +2469,8 @@ export default function App() {
       }
       cancelEditCustomer();
       setCustomerQuery(payload.name);
-      await Promise.all([searchCustomers(payload.name), loadMsps()]);
+      setCustomerPage(1);
+      await Promise.all([searchCustomers(payload.name, 1), loadMsps()]);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
@@ -2371,7 +2502,7 @@ export default function App() {
         throw new Error(formatApiError(detail.detail, res.statusText));
       }
       if (editingCustomerId === id) cancelEditCustomer();
-      await searchCustomers(customerQuery);
+      await searchCustomers(customerQuery, customerPage);
     } catch (err) {
       setCustomerError(err instanceof Error ? err.message : "error");
     }
@@ -2509,6 +2640,19 @@ export default function App() {
     setAdminStatus(null);
   }
 
+  async function openProjectForEdit(projectId: string) {
+    if (!token) return;
+    try {
+      const res = await fetch(`${PROJECT_API}/projects/${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      startEditProject((await res.json()) as ProjectDetail);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
   async function saveProjectBudget() {
     if (!token || !editingProjectId) return;
     setTimeError(null);
@@ -2551,7 +2695,11 @@ export default function App() {
       }
       setAdminStatus(t("budget.saved"));
       setEditingProjectId(null);
-      await Promise.all([loadManagedProjects(), loadBookable()]);
+      await Promise.all([
+        loadManagedProjects(),
+        loadBookable(),
+        searchProjects(projectQuery, projectPage),
+      ]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -2586,7 +2734,9 @@ export default function App() {
     if (!token) return;
     setTimeError(null);
     setAdminStatus(null);
-    const project = managedProjects.find((p) => p.id === projectId);
+    const project =
+      managedProjects.find((p) => p.id === projectId) ||
+      projectSearchResults.find((p) => p.id === projectId);
     const kickoff =
       funnelStatus === "kickoff_planned"
         ? fromDateTimeLocalValue(budgetForm.kickoff_at) || project?.kickoff_at || null
@@ -2609,16 +2759,21 @@ export default function App() {
       }
       setAdminStatus(t("project.funnelAdvanced", { stage: t(`project.funnel.${funnelStatus}`) }));
       if (editingProjectId === projectId) setEditingProjectId(null);
-      await Promise.all([loadManagedProjects(), loadBookable()]);
+      await Promise.all([
+        loadManagedProjects(),
+        loadBookable(),
+        searchProjects(projectQuery, projectPage),
+        loadOrderedProjectCount(),
+      ]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
   }
 
-  async function openKickoffPicker(project: ProjectDetail) {
+  async function openKickoffPicker(projectId: string) {
     if (!token) return;
     setTimeError(null);
-    setKickoffPickerProjectId(project.id);
+    setKickoffPickerProjectId(projectId);
     setKickoffSlots([]);
     const todayWeek = startOfIsoWeek(new Date());
     setKickoffWeekStart(todayWeek);
@@ -2794,7 +2949,10 @@ export default function App() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({
+          status: nextStatus,
+          ...(nextStatus === "paid" ? { paid_at: toIsoDate(new Date()) } : {}),
+        }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
@@ -2802,6 +2960,28 @@ export default function App() {
       }
       setFinanceStatus(t("finance.invoiceUpdated"));
       await Promise.all([loadFinance(), loadManagedProjects(), loadBookable()]);
+    } catch (err) {
+      setTimeError(err instanceof Error ? err.message : "error");
+    }
+  }
+
+  async function patchInvoicePaymentDate(id: string, paidAt: string) {
+    if (!token) return;
+    setTimeError(null);
+    try {
+      const res = await fetch(`${FINANCE_API}/invoices/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ paid_at: paidAt }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(typeof detail.detail === "string" ? detail.detail : res.statusText);
+      }
+      await loadFinance();
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -2905,6 +3085,7 @@ export default function App() {
               ? otherCostForm.end_month
               : null,
           notes: otherCostForm.notes.trim() || null,
+          vat_rate: Number(otherCostForm.vat_rate) || 21,
         }),
       });
       if (!res.ok) {
@@ -2914,6 +3095,7 @@ export default function App() {
       setOtherCostForm({
         label: "",
         amount: "",
+        vat_rate: "21",
         cadence: "one_off",
         start_month: "",
         end_month: "",
@@ -2928,7 +3110,12 @@ export default function App() {
 
   async function patchMonthlyCost(
     id: string,
-    patch: Partial<Pick<MonthlyCost, "invoice_matched" | "invoice_paid">>,
+    patch: Partial<
+      Pick<
+        MonthlyCost,
+        "invoice_matched" | "invoice_paid" | "paid_at" | "label" | "amount_eur" | "notes" | "vat_rate"
+      >
+    >,
   ) {
     if (!token) return;
     setTimeError(null);
@@ -2972,7 +3159,7 @@ export default function App() {
   }
 
   async function generatePersonnelProposal(partnerId: string) {
-    if (!token || !costMonth) return;
+    if (!token || !isValidMonth(draftInvoiceMonth)) return;
     setTimeError(null);
     setFinanceStatus(null);
     setGeneratingProposalFor(partnerId);
@@ -2983,7 +3170,7 @@ export default function App() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ partner_id: partnerId, month: costMonth }),
+        body: JSON.stringify({ partner_id: partnerId, month: draftInvoiceMonth }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
@@ -2991,7 +3178,12 @@ export default function App() {
       }
       const created = (await res.json()) as FinanceInvoice;
       setFinanceStatus(t("finance.personnelProposalGenerated"));
-      await Promise.all([loadPersonnelCandidates(), loadPersonnelProposals()]);
+      await Promise.all([
+        loadPersonnelCandidates(),
+        loadPersonnelProposals(),
+        loadMonthlyCosts(),
+        loadAllMonthlyCosts(),
+      ]);
       if (created.id) {
         await downloadInvoicePdf(created.id);
       }
@@ -3669,7 +3861,7 @@ export default function App() {
       setProjectCreateName("");
       setProjectBillable(null);
       setCreatingProject(false);
-      await Promise.all([loadManagedProjects(), loadBookable()]);
+      await Promise.all([loadManagedProjects(), loadBookable(), searchProjects(projectQuery, projectPage)]);
     } catch (err) {
       setTimeError(err instanceof Error ? err.message : "error");
     }
@@ -3755,17 +3947,35 @@ export default function App() {
     .filter((c) => c.classification !== "approved_non_billable")
     .reduce((s, c) => s + c.hours * (c.rate_eur || 0), 0);
   const nonBillableMonthCost = monthCompensation
-    .filter((c) => c.classification === "approved_non_billable")
+    .filter(isChargebackWithCost)
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
+  const costsMonthCompensation = monthCompensation.filter(showInCostsCompensation);
   const todayIso = toIsoDate(new Date());
-  const pendingFutureBillableHours = monthCompensation
+  const draftMonthCompensation = compensation.filter((c) => {
+    const workMonth = (c.work_date || "").slice(0, 7);
+    if (workMonth) return workMonth === draftInvoiceMonth;
+    if (!c.updated_at) return false;
+    return c.updated_at.startsWith(draftInvoiceMonth);
+  });
+  const pendingFutureBillableHoursDraft = draftMonthCompensation
     .filter(
       (c) =>
-        c.classification !== "approved_non_billable" &&
+        isPersonnelProposableHour(c) &&
         Boolean(c.work_date) &&
         (c.work_date as string) > todayIso,
     )
     .reduce((s, c) => s + c.hours, 0);
+  const billableHoursOtherMonthsDraft = (() => {
+    if (!isValidMonth(draftInvoiceMonth)) return [] as [string, number][];
+    const map = new Map<string, number>();
+    for (const c of compensation) {
+      if (!isPersonnelProposableHour(c)) continue;
+      const workMonth = (c.work_date || "").slice(0, 7);
+      if (!workMonth || workMonth === draftInvoiceMonth) continue;
+      map.set(workMonth, (map.get(workMonth) || 0) + c.hours);
+    }
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  })();
   const hoursByResourceMonth = (() => {
     const map = new Map<string, { name: string; billable: number; nonBillable: number }>();
     for (const c of monthCompensation) {
@@ -3774,8 +3984,8 @@ export default function App() {
         billable: 0,
         nonBillable: 0,
       };
-      if (c.classification === "approved_non_billable") row.nonBillable += c.hours;
-      else row.billable += c.hours;
+      if (isPersonnelProposableHour(c)) row.billable += c.hours;
+      else if (isChargebackWithCost(c)) row.nonBillable += c.hours;
       map.set(c.partner_id, row);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -3795,18 +4005,26 @@ export default function App() {
   })();
   const kpiMonths = monthsForKpiHorizon(kpiAnchorMonth, kpiHorizon);
   const kpiPeriod = kpiPeriodLabel(kpiAnchorMonth, kpiHorizon);
-  const periodCompensation = compensation.filter((c) => isoInMonths(c.updated_at, kpiMonths));
-  const periodInvoices = invoices.filter((i) => isoInMonths(i.issued_at, kpiMonths));
-  const billedPeriod = periodInvoices
+  const periodCompensation = compensation.filter((c) => compensationInMonths(c, kpiMonths));
+  const salesInvoices = invoices.filter(customerSalesInvoice);
+  const billedPeriod = salesInvoices
     .filter((i) => i.status === "issued" || i.status === "paid")
+    .filter((i) => isoInMonths(i.issued_at, kpiMonths))
     .reduce((s, i) => s + i.subtotal_eur, 0);
-  const receivedPeriod = periodInvoices
+  const receivedPeriod = salesInvoices
     .filter((i) => i.status === "paid")
+    .filter((i) => i.paid_at && isoInMonths(i.paid_at, kpiMonths))
     .reduce((s, i) => s + i.amount_eur, 0);
-  const revenueNetPaid = periodInvoices
-    .filter((i) => i.status === "paid")
-    .reduce((s, i) => s + i.subtotal_eur, 0);
-  const otherCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
+  const cashInTotal = cashRevenueForMonths(salesInvoices, kpiMonths);
+  const declaredCostsTotal = monthlyCosts.reduce((s, row) => s + (row.amount_eur || 0), 0);
+  const countedCostsTotal = monthlyCosts
+    .filter(
+      (row) =>
+        costCountsTowardKpi(row) &&
+        Boolean(row.paid_at) &&
+        row.paid_at!.slice(0, 7) === costMonth,
+    )
+    .reduce((s, row) => s + (row.amount_eur || 0), 0);
   const resourceByPartner = new Map<string, Resource>();
   const resourceById = new Map<string, Resource>();
   for (const r of resources) {
@@ -3854,30 +4072,32 @@ export default function App() {
   const isExternalResource = (partnerId: string, projectId: string | null | undefined) =>
     resourceForPartner(partnerId, projectId)?.kind === "external";
   const personnelCostBase = (c: CompensationEffect) => {
-    if (c.classification === "approved_non_billable") return Math.abs(c.amount_eur);
+    if (c.classification === "approved_non_billable") {
+      return isChargebackWithCost(c) ? Math.abs(c.amount_eur) : 0;
+    }
     return c.hours * actualResourceRate(c.partner_id, c.project_id);
   };
   // Billable ledger stores rate=0 by design; derive expected (staffing) vs actual (resource billable).
   const approvedBillableHours = periodCompensation
-    .filter((c) => c.classification !== "approved_non_billable")
+    .filter(isPersonnelProposableHour)
     .reduce((s, c) => s + c.hours, 0);
   const personnelExpectedCost = periodCompensation.reduce((s, c) => {
-    if (c.classification === "approved_non_billable") return s + Math.abs(c.amount_eur);
+    if (c.classification === "approved_non_billable") {
+      return isChargebackWithCost(c) ? s + Math.abs(c.amount_eur) : s;
+    }
     return s + c.hours * expectedBillableRate(c.partner_id, c.project_id);
   }, 0);
   const personnelActualCost = periodCompensation.reduce((s, c) => s + personnelCostBase(c), 0);
   const personnelNonBillableCost = periodCompensation
-    .filter((c) => c.classification === "approved_non_billable")
+    .filter(isChargebackWithCost)
     .reduce((s, c) => s + Math.abs(c.amount_eur), 0);
   // External personnel invoices: rate is ex-VAT → VAT is paid then reclaimable as input VAT.
   const personnelInputVat = periodCompensation.reduce((s, c) => {
     if (!isExternalResource(c.partner_id, c.project_id)) return s;
     return s + personnelCostBase(c) * DEFAULT_VAT_RATE;
   }, 0);
-  const personnelCostTotal = personnelActualCost;
-  // Recurring monthly costs × months in the selected horizon (×1 / ×3 / ×12 when fully active).
-  const nonPersonnelCostTotal = nonPersonnelForMonths(allMonthlyCosts, kpiMonths);
-  const grossProfit = revenueNetPaid - personnelCostTotal - nonPersonnelCostTotal;
+  const cashOutTotal = cashCostsForMonths(allMonthlyCosts, kpiMonths);
+  const grossProfit = cashInTotal - cashOutTotal;
   const projectedTax = Math.max(0, grossProfit * CORP_TAX_RATE);
   const profitAfterTax = grossProfit - projectedTax;
   const financeMonthLabels = useMemo(() => {
@@ -3937,13 +4157,33 @@ export default function App() {
       ] as const,
     [t],
   );
+  const financeYtd = useMemo(
+    () => financeYtdTotals(financeChartData, financeChartYear, CORP_TAX_RATE),
+    [financeChartData, financeChartYear],
+  );
+  const draftInvoicesByResource = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; name: string; invoices: FinanceInvoice[]; subtotal: number; vat: number }
+    >();
+    for (const inv of personnelProposals) {
+      const key = inv.partner_id || inv.seller_name || inv.id;
+      const name = inv.seller_name || inv.customer_name || key;
+      const row = map.get(key) || { key, name, invoices: [], subtotal: 0, vat: 0 };
+      row.invoices.push(inv);
+      row.subtotal += inv.subtotal_eur || 0;
+      row.vat += inv.vat_eur || 0;
+      map.set(key, row);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [personnelProposals]);
   const personnelInputVatByQuarter = (() => {
     const map = new Map<string, number>();
     for (const c of compensation) {
       if (!isExternalResource(c.partner_id, c.project_id)) continue;
-      const iso = c.updated_at || "";
+      const iso = c.work_date || c.updated_at || "";
       if (!iso) continue;
-      const d = new Date(iso);
+      const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso);
       if (Number.isNaN(d.getTime())) continue;
       const label = `${d.getFullYear()}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
       map.set(label, (map.get(label) || 0) + personnelCostBase(c) * DEFAULT_VAT_RATE);
@@ -4387,6 +4627,11 @@ export default function App() {
               >
                 <NavIcon name="projects" />
                 <span className="nav-label">{t("nav.projects")}</span>
+                {orderedProjectCount > 0 ? (
+                  <span className="nav-badge" title={t("project.orderedBadge", { count: orderedProjectCount })}>
+                    {orderedProjectCount}
+                  </span>
+                ) : null}
               </button>
             ) : null}
             {isManager ? (
@@ -4627,6 +4872,7 @@ export default function App() {
                     onChange={(e) => {
                       setCustomerError(null);
                       setCustomerQuery(e.target.value);
+                      setCustomerPage(1);
                     }}
                     placeholder={t("customer.searchPlaceholder")}
                     autoComplete="off"
@@ -4634,11 +4880,18 @@ export default function App() {
                   {customerError && !creatingCustomer && !editingCustomerId ? (
                     <p className="status error">{customerError}</p>
                   ) : null}
-                  {!customerQuery.trim() ? (
-                    <p className="status">{t("customer.searchHint")}</p>
-                  ) : customers.length === 0 ? (
+                  <p className="status muted">{t("customer.searchHint")}</p>
+                  {customers.length === 0 ? (
                     <p className="status">{t("customer.noMatches")}</p>
                   ) : (
+                    <>
+                    <p className="status muted">
+                      {t("pagination.range", {
+                        from: (customerPage - 1) * 50 + 1,
+                        to: (customerPage - 1) * 50 + customers.length,
+                        total: customerTotal,
+                      })}
+                    </p>
                     <ul className="entry-list">
                       {customers.map((customer) => (
                         <li key={customer.id}>
@@ -4695,6 +4948,23 @@ export default function App() {
                         </li>
                       ))}
                     </ul>
+                    <div className="actions pagination-actions">
+                      <button
+                        type="button"
+                        disabled={customerPage <= 1}
+                        onClick={() => setCustomerPage((p) => Math.max(1, p - 1))}
+                      >
+                        {t("pagination.prev")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!customerHasMore}
+                        onClick={() => setCustomerPage((p) => p + 1)}
+                      >
+                        {t("pagination.next")}
+                      </button>
+                    </div>
+                    </>
                   )}
                 </div>
 
@@ -5210,6 +5480,7 @@ export default function App() {
                         ["operational", "finance.panelOperational"],
                         ["billing", "finance.panelBilling"],
                         ["costs", "finance.panelCosts"],
+                        ["draft-invoices", "finance.panelDraftInvoices"],
                         ["kpis", "finance.panelKpis"],
                       ] as const
                     ).map(([id, label]) => (
@@ -5239,6 +5510,18 @@ export default function App() {
                       currencyTooltip={(value) =>
                         t("finance.overviewChartTooltip", { eur: value.toFixed(2) })
                       }
+                      ytd={financeYtd}
+                      ytdTitle={t("finance.ytdTitle", { year: financeChartYear })}
+                      ytdRevenueLabel={t("finance.ytdRevenue")}
+                      ytdCostsLabel={t("finance.ytdCosts")}
+                      ytdGrossProfitLabel={t("finance.ytdGrossProfit")}
+                      ytdNetProfitLabel={t("finance.ytdNetProfit")}
+                      ytdNetProfitHint={t("finance.ytdNetProfitHint", {
+                        rate: Math.round(CORP_TAX_RATE * 1000) / 10,
+                      })}
+                      ytdSuffix={t("finance.chartYtdSuffix")}
+                      monthlySuffix={t("finance.chartMonthlySuffix")}
+                      corpTaxRate={CORP_TAX_RATE}
                     />
                   </section>
                 ) : null}
@@ -5570,6 +5853,18 @@ export default function App() {
                                     total: inv.amount_eur.toFixed(2),
                                   })}
                                 </div>
+                                {inv.status === "paid" ? (
+                                  <label className="checkbox-row">
+                                    {t("finance.invoicePaymentDate")}
+                                    <input
+                                      type="date"
+                                      value={(inv.paid_at || inv.issued_at || "").slice(0, 10)}
+                                      onChange={(e) =>
+                                        void patchInvoicePaymentDate(inv.id, e.target.value)
+                                      }
+                                    />
+                                  </label>
+                                ) : null}
                               </div>
                               <div className="entry-actions">
                                 {inv.status === "draft" ? (
@@ -5685,16 +5980,26 @@ export default function App() {
                       value={costMonth}
                       onChange={(e) => setCostMonth(e.target.value)}
                     />
+                    <h3>{t("finance.declaredCostsTitle")}</h3>
+                    <p className="status">{t("finance.declaredCostsIntro")}</p>
                     <p className="status">
-                      {t("finance.costBillable", { eur: billableMonthCost.toFixed(2) })}
+                      {t("finance.declaredCostsTotal", { eur: declaredCostsTotal.toFixed(2) })}
                     </p>
-                    <p className="status">
-                      {t("finance.costNonBillable", { eur: nonBillableMonthCost.toFixed(2) })}
+                    <p className="status muted">
+                      {t("finance.countedCostsTotal", { eur: countedCostsTotal.toFixed(2) })}
                     </p>
                     <h3>{t("finance.hoursByResource")}</h3>
                     {hoursByResourceMonth.length === 0 ? (
                       <p className="status">{t("finance.hoursByResourceEmpty")}</p>
                     ) : (
+                      <>
+                        <p className="status muted">
+                          {t("finance.costBillable", { eur: billableMonthCost.toFixed(2) })}
+                        </p>
+                        <p className="status muted">
+                          {t("finance.costNonBillable", { eur: nonBillableMonthCost.toFixed(2) })}
+                        </p>
+                        <p className="status muted">{t("finance.hoursLedgerNote")}</p>
                       <ul className="entry-list">
                         {hoursByResourceMonth.map((row) => (
                           <li key={row.name}>
@@ -5710,20 +6015,363 @@ export default function App() {
                           </li>
                         ))}
                       </ul>
+                      </>
                     )}
 
-                    <h3>{t("finance.personnelProposalsTitle")}</h3>
+                    <h3>{t("finance.monthlyCostsTitle")}</h3>
+                    <p className="status">{t("finance.monthlyCostsIntro")}</p>
+                    <div className="form-row">
+                      <div>
+                        <label htmlFor="supLabel">{t("finance.supplierLabel")}</label>
+                        <input
+                          id="supLabel"
+                          value={otherCostForm.label}
+                          onChange={(e) => setOtherCostForm((p) => ({ ...p, label: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="supAmount">{t("finance.supplierAmountExVat")}</label>
+                        <input
+                          id="supAmount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={otherCostForm.amount}
+                          onChange={(e) => setOtherCostForm((p) => ({ ...p, amount: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="supVatRate">{t("finance.costVatRate")}</label>
+                        <input
+                          id="supVatRate"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={otherCostForm.vat_rate}
+                          onChange={(e) => setOtherCostForm((p) => ({ ...p, vat_rate: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <p className="muted">{t("finance.costVatHint")}</p>
+                    <label htmlFor="costCadence">{t("finance.costCadence")}</label>
+                    <select
+                      id="costCadence"
+                      value={otherCostForm.cadence}
+                      onChange={(e) =>
+                        setOtherCostForm((p) => ({
+                          ...p,
+                          cadence: e.target.value === "recurring" ? "recurring" : "one_off",
+                        }))
+                      }
+                    >
+                      <option value="one_off">{t("finance.costOneOff")}</option>
+                      <option value="recurring">{t("finance.costRecurring")}</option>
+                    </select>
+                    <div className="form-row">
+                      <div>
+                        <label htmlFor="costStart">{t("finance.costStartMonth")}</label>
+                        <input
+                          id="costStart"
+                          type="month"
+                          value={otherCostForm.start_month || costMonth}
+                          onChange={(e) =>
+                            setOtherCostForm((p) => ({ ...p, start_month: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="costEnd">{t("finance.costEndMonth")}</label>
+                        <input
+                          id="costEnd"
+                          type="month"
+                          value={otherCostForm.end_month}
+                          disabled={otherCostForm.cadence !== "recurring"}
+                          onChange={(e) =>
+                            setOtherCostForm((p) => ({ ...p, end_month: e.target.value }))
+                          }
+                        />
+                        <p className="field-hint">{t("finance.costEndHint")}</p>
+                      </div>
+                    </div>
+                    <label htmlFor="costNotes">{t("finance.costNotes")}</label>
+                    <input
+                      id="costNotes"
+                      value={otherCostForm.notes}
+                      onChange={(e) => setOtherCostForm((p) => ({ ...p, notes: e.target.value }))}
+                      maxLength={500}
+                    />
+                    <div className="actions">
+                      <button type="button" className="primary" onClick={() => void saveMonthlyCost()}>
+                        {t("finance.addMonthlyCost")}
+                      </button>
+                    </div>
+                    {monthlyCosts.length === 0 ? (
+                      <p className="status">{t("finance.monthlyCostsEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {monthlyCosts.map((row) => (
+                          <li key={row.id}>
+                            <div>
+                              <div className="form-row">
+                                <div>
+                                  <label>{t("finance.supplierLabel")}</label>
+                                  <input
+                                    defaultValue={row.label}
+                                    onBlur={(e) => {
+                                      const label = e.target.value.trim();
+                                      if (label && label !== row.label) {
+                                        void patchMonthlyCost(row.id, { label });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <label>{t("finance.supplierAmountExVat")}</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    defaultValue={row.amount_eur}
+                                    onBlur={(e) => {
+                                      const amount = Number(e.target.value);
+                                      if (Number.isFinite(amount) && amount >= 0 && amount !== row.amount_eur) {
+                                        void patchMonthlyCost(row.id, { amount_eur: amount });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                                <div>
+                                  <label>{t("finance.costVatRate")}</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.1"
+                                    defaultValue={row.vat_rate ?? 21}
+                                    onBlur={(e) => {
+                                      const vat_rate = Number(e.target.value);
+                                      if (
+                                        Number.isFinite(vat_rate) &&
+                                        vat_rate >= 0 &&
+                                        vat_rate !== row.vat_rate
+                                      ) {
+                                        void patchMonthlyCost(row.id, { vat_rate });
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="muted">
+                                {t("finance.costExVatLine", {
+                                  net: row.amount_eur.toFixed(2),
+                                  vat: (row.vat_eur || 0).toFixed(2),
+                                  total: (row.amount_eur + (row.vat_eur || 0)).toFixed(2),
+                                })}
+                              </div>
+                              <div className="muted">
+                                {row.cadence === "recurring"
+                                  ? t("finance.costRecurringRange", {
+                                      start: row.start_month,
+                                      end: row.end_month || t("finance.costOngoing"),
+                                    })
+                                  : t("finance.costOneOffMonth", { month: row.start_month })}
+                                {row.notes ? ` · ${row.notes}` : ""}
+                                {row.personnel_invoice_id ? ` · ${t("finance.costFromDraftInvoice")}` : ""}
+                              </div>
+                              {!costCountsTowardKpi(row) ? (
+                                <div className="muted">{t("finance.costPendingKpi")}</div>
+                              ) : (
+                                <div className="muted">{t("finance.supplierCompleted")}</div>
+                              )}
+                              <label className="checkbox-row">
+                                <input
+                                  type="checkbox"
+                                  checked={row.invoice_matched}
+                                  onChange={(e) =>
+                                    void patchMonthlyCost(row.id, {
+                                      invoice_matched: e.target.checked,
+                                    })
+                                  }
+                                />
+                                {t("finance.invoiceMatches")}
+                              </label>
+                              <label className="checkbox-row">
+                                <input
+                                  type="checkbox"
+                                  checked={row.invoice_paid}
+                                  onChange={(e) => {
+                                    const paid = e.target.checked;
+                                    void patchMonthlyCost(row.id, {
+                                      invoice_paid: paid,
+                                      ...(paid && !row.paid_at
+                                        ? { paid_at: toIsoDate(new Date()) }
+                                        : {}),
+                                    });
+                                  }}
+                                />
+                                {t("finance.invoicePayed")}
+                              </label>
+                              {row.invoice_paid ? (
+                                <label className="checkbox-row">
+                                  {t("finance.costPaymentDate")}
+                                  <input
+                                    type="date"
+                                    value={(row.paid_at || "").slice(0, 10)}
+                                    onChange={(e) =>
+                                      void patchMonthlyCost(row.id, {
+                                        paid_at: e.target.value,
+                                      })
+                                    }
+                                  />
+                                </label>
+                              ) : null}
+                            </div>
+                            <div className="entry-actions">
+                              {row.personnel_invoice_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadInvoicePdf(row.personnel_invoice_id!)}
+                                >
+                                  {t("finance.viewPdf")}
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => void deleteMonthlyCost(row.id, row.label)}
+                              >
+                                {t("customer.delete")}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <h3>{t("finance.compensation")}</h3>
+                    {costsMonthCompensation.length > 0 ? (
+                      <ul className="entry-list">
+                        {costsMonthCompensation.map((row) => (
+                          <li key={row.time_entry_id}>
+                            <div>
+                              <strong>{row.partner_name}</strong>
+                              <div className="muted">
+                                {t(
+                                  row.classification === "approved_non_billable"
+                                    ? "finance.compensationChargeback"
+                                    : "finance.compensationBillable",
+                                  {
+                                    hours: row.hours,
+                                    rate: row.rate_eur.toFixed(2),
+                                    eur: row.amount_eur.toFixed(2),
+                                  },
+                                )}
+                                {row.project_id ? ` · ${rowLabel(row.project_id)}` : ""}
+                              </div>
+                            </div>
+                            <div className="entry-actions">
+                              <button
+                                type="button"
+                                disabled={!row.can_undo}
+                                title={
+                                  row.undo_blocked_reason === "project_closed"
+                                    ? t("finance.compensationProjectClosed")
+                                    : row.undo_blocked_reason === "already_invoiced"
+                                      ? t("finance.compensationInvoiced")
+                                      : undefined
+                                }
+                                onClick={() => void undoCompensation(row.time_entry_id)}
+                              >
+                                {t("finance.compensationUndo")}
+                              </button>
+                              {!row.can_undo ? (
+                                <div className="muted">
+                                  {row.undo_blocked_reason === "project_closed"
+                                    ? t("finance.compensationProjectClosed")
+                                    : t("finance.compensationInvoiced")}
+                                </div>
+                              ) : null}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="status">{t("finance.compensationEmpty")}</p>
+                    )}
+                  </section>
+                ) : null}
+
+                {financePanel === "draft-invoices" ? (
+                  <section className="panel wide">
+                    <h2>{t("finance.personnelProposalsTitle")}</h2>
                     <p className="status">{t("finance.personnelProposalsIntro")}</p>
+                    <p className="muted">{t("finance.draftInvoicesNotCostsHint")}</p>
+                    <label htmlFor="draftInvoiceMonth">{t("finance.costMonth")}</label>
+                    <input
+                      id="draftInvoiceMonth"
+                      type="month"
+                      value={draftInvoiceMonth}
+                      onChange={(e) => setDraftInvoiceMonth(e.target.value)}
+                    />
+                    <h3>{t("finance.draftByResourceTitle")}</h3>
+                    <p className="muted">{t("finance.draftByResourceIntro")}</p>
+                    {draftInvoicesByResource.length === 0 ? (
+                      <p className="status">{t("finance.draftByResourceEmpty")}</p>
+                    ) : (
+                      <ul className="entry-list">
+                        {draftInvoicesByResource.map((row) => (
+                          <li key={row.key}>
+                            <div>
+                              <strong>{row.name}</strong>
+                              <div className="muted">
+                                {t("finance.draftByResourceAmount", {
+                                  net: row.subtotal.toFixed(2),
+                                  vat: row.vat.toFixed(2),
+                                  total: (row.subtotal + row.vat).toFixed(2),
+                                })}
+                              </div>
+                              <ul className="draft-invoice-links">
+                                {row.invoices.map((inv) => (
+                                  <li key={inv.id}>
+                                    <button
+                                      type="button"
+                                      className="link-button"
+                                      onClick={() => void downloadInvoicePdf(inv.id)}
+                                    >
+                                      {t("finance.draftByResourceLink", {
+                                        number: inv.invoice_number,
+                                        net: inv.subtotal_eur.toFixed(2),
+                                      })}
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <h3>{t("finance.personnelProposalsCandidatesTitle")}</h3>
                     {personnelCandidates.length === 0 ? (
                       <>
                         <p className="status">{t("finance.personnelProposalsEmpty")}</p>
-                        {pendingFutureBillableHours > 0 ? (
+                        {pendingFutureBillableHoursDraft > 0 ? (
                           <p className="status muted">
                             {t("finance.personnelProposalsFutureHours", {
-                              hours: pendingFutureBillableHours.toFixed(1),
+                              hours: pendingFutureBillableHoursDraft.toFixed(1),
                             })}
                           </p>
                         ) : null}
+                        {billableHoursOtherMonthsDraft.map(([month, hours]) => (
+                          <p className="status muted" key={month}>
+                            {t("finance.personnelProposalsOtherMonth", {
+                              month,
+                              hours: hours.toFixed(1),
+                            })}{" "}
+                            <button type="button" onClick={() => setDraftInvoiceMonth(month)}>
+                              {t("finance.personnelProposalsSwitchMonth")}
+                            </button>
+                          </p>
+                        ))}
                       </>
                     ) : (
                       <ul className="entry-list">
@@ -5784,8 +6432,14 @@ export default function App() {
                             <div>
                               <strong>{inv.invoice_number}</strong>
                               <div className="muted">
-                                {inv.seller_name} · €{inv.amount_eur.toFixed(2)} · {inv.status}
+                                {inv.seller_name} · {t("finance.costExVatLine", {
+                                  net: inv.subtotal_eur.toFixed(2),
+                                  vat: inv.vat_eur.toFixed(2),
+                                  total: inv.amount_eur.toFixed(2),
+                                })}{" "}
+                                · {inv.status}
                               </div>
+                              <div className="muted">{t("finance.draftInvoiceCostHint")}</div>
                             </div>
                             <div className="entry-actions">
                               {inv.pdf_path ? (
@@ -5799,194 +6453,6 @@ export default function App() {
                           </li>
                         ))}
                       </ul>
-                    )}
-
-                    <h3>{t("finance.monthlyCostsTitle")}</h3>
-                    <p className="status">{t("finance.monthlyCostsIntro")}</p>
-                    <p className="status">
-                      {t("finance.otherCostsTotal", { eur: otherCostsTotal.toFixed(2) })}
-                    </p>
-                    <div className="form-row">
-                      <div>
-                        <label htmlFor="supLabel">{t("finance.supplierLabel")}</label>
-                        <input
-                          id="supLabel"
-                          value={otherCostForm.label}
-                          onChange={(e) => setOtherCostForm((p) => ({ ...p, label: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="supAmount">{t("finance.supplierAmount")}</label>
-                        <input
-                          id="supAmount"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={otherCostForm.amount}
-                          onChange={(e) => setOtherCostForm((p) => ({ ...p, amount: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <label htmlFor="costCadence">{t("finance.costCadence")}</label>
-                    <select
-                      id="costCadence"
-                      value={otherCostForm.cadence}
-                      onChange={(e) =>
-                        setOtherCostForm((p) => ({
-                          ...p,
-                          cadence: e.target.value === "recurring" ? "recurring" : "one_off",
-                        }))
-                      }
-                    >
-                      <option value="one_off">{t("finance.costOneOff")}</option>
-                      <option value="recurring">{t("finance.costRecurring")}</option>
-                    </select>
-                    <div className="form-row">
-                      <div>
-                        <label htmlFor="costStart">{t("finance.costStartMonth")}</label>
-                        <input
-                          id="costStart"
-                          type="month"
-                          value={otherCostForm.start_month || costMonth}
-                          onChange={(e) =>
-                            setOtherCostForm((p) => ({ ...p, start_month: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="costEnd">{t("finance.costEndMonth")}</label>
-                        <input
-                          id="costEnd"
-                          type="month"
-                          value={otherCostForm.end_month}
-                          disabled={otherCostForm.cadence !== "recurring"}
-                          onChange={(e) =>
-                            setOtherCostForm((p) => ({ ...p, end_month: e.target.value }))
-                          }
-                        />
-                        <p className="field-hint">{t("finance.costEndHint")}</p>
-                      </div>
-                    </div>
-                    <label htmlFor="costNotes">{t("finance.costNotes")}</label>
-                    <input
-                      id="costNotes"
-                      value={otherCostForm.notes}
-                      onChange={(e) => setOtherCostForm((p) => ({ ...p, notes: e.target.value }))}
-                      maxLength={500}
-                    />
-                    <div className="actions">
-                      <button type="button" className="primary" onClick={() => void saveMonthlyCost()}>
-                        {t("finance.addMonthlyCost")}
-                      </button>
-                    </div>
-                    {monthlyCosts.length === 0 ? (
-                      <p className="status">{t("finance.monthlyCostsEmpty")}</p>
-                    ) : (
-                      <ul className="entry-list">
-                        {monthlyCosts.map((row) => (
-                          <li key={row.id}>
-                            <div>
-                              <strong>
-                                {row.label} · €{row.amount_eur.toFixed(2)}
-                              </strong>
-                              <div className="muted">
-                                {row.cadence === "recurring"
-                                  ? t("finance.costRecurringRange", {
-                                      start: row.start_month,
-                                      end: row.end_month || t("finance.costOngoing"),
-                                    })
-                                  : t("finance.costOneOffMonth", { month: row.start_month })}
-                                {row.notes ? ` · ${row.notes}` : ""}
-                              </div>
-                              <label className="checkbox-row">
-                                <input
-                                  type="checkbox"
-                                  checked={row.invoice_matched}
-                                  onChange={(e) =>
-                                    void patchMonthlyCost(row.id, {
-                                      invoice_matched: e.target.checked,
-                                    })
-                                  }
-                                />
-                                {t("finance.invoiceMatches")}
-                              </label>
-                              <label className="checkbox-row">
-                                <input
-                                  type="checkbox"
-                                  checked={row.invoice_paid}
-                                  onChange={(e) =>
-                                    void patchMonthlyCost(row.id, {
-                                      invoice_paid: e.target.checked,
-                                    })
-                                  }
-                                />
-                                {t("finance.invoicePayed")}
-                              </label>
-                              {row.invoice_matched && row.invoice_paid ? (
-                                <div className="muted">{t("finance.supplierCompleted")}</div>
-                              ) : null}
-                            </div>
-                            <div className="entry-actions">
-                              <button
-                                type="button"
-                                onClick={() => void deleteMonthlyCost(row.id, row.label)}
-                              >
-                                {t("customer.delete")}
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <h3>{t("finance.compensation")}</h3>
-                    {compensation.length > 0 ? (
-                      <ul className="entry-list">
-                        {compensation.map((row) => (
-                          <li key={row.time_entry_id}>
-                            <div>
-                              <strong>{row.partner_name}</strong>
-                              <div className="muted">
-                                {t(
-                                  row.classification === "approved_non_billable"
-                                    ? "finance.compensationChargeback"
-                                    : "finance.compensationBillable",
-                                  {
-                                    hours: row.hours,
-                                    rate: row.rate_eur.toFixed(2),
-                                    eur: row.amount_eur.toFixed(2),
-                                  },
-                                )}
-                                {row.project_id ? ` · ${rowLabel(row.project_id)}` : ""}
-                              </div>
-                            </div>
-                            <div className="entry-actions">
-                              <button
-                                type="button"
-                                disabled={!row.can_undo}
-                                title={
-                                  row.undo_blocked_reason === "project_closed"
-                                    ? t("finance.compensationProjectClosed")
-                                    : row.undo_blocked_reason === "already_invoiced"
-                                      ? t("finance.compensationInvoiced")
-                                      : undefined
-                                }
-                                onClick={() => void undoCompensation(row.time_entry_id)}
-                              >
-                                {t("finance.compensationUndo")}
-                              </button>
-                              {!row.can_undo ? (
-                                <div className="muted">
-                                  {row.undo_blocked_reason === "project_closed"
-                                    ? t("finance.compensationProjectClosed")
-                                    : t("finance.compensationInvoiced")}
-                                </div>
-                              ) : null}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="status">{t("finance.compensationEmpty")}</p>
                     )}
                   </section>
                 ) : null}
@@ -6100,6 +6566,13 @@ export default function App() {
                     <h3>{t("finance.costOverviewTitle")}</h3>
                     <p className="status">{t("finance.costOverviewIntroPeriod")}</p>
                     <p className="status">
+                      {t("finance.cashOutPeriod", {
+                        period: kpiPeriod,
+                        eur: cashOutTotal.toFixed(2),
+                      })}
+                    </p>
+                    <p className="muted">{t("finance.cashBasisHint")}</p>
+                    <p className="status">
                       {t("finance.approvedHoursLine", { hours: approvedBillableHours })}
                     </p>
                     <p className="status">
@@ -6122,22 +6595,12 @@ export default function App() {
                     </p>
                     <p className="muted">{t("finance.personnelVatHint")}</p>
                     <p className="status">
-                      {t("finance.nonPersonnelCostTotal", { eur: nonPersonnelCostTotal.toFixed(2) })}
-                    </p>
-                    <p className="muted">
-                      {t("finance.nonPersonnelPeriodHint", {
-                        months: kpiMonths.length,
-                        period: kpiPeriod,
-                      })}
-                    </p>
-                    <p className="status">
                       {t("finance.grossProfit", { eur: grossProfit.toFixed(2) })}
                     </p>
                     <p className="muted">
                       {t("finance.grossProfitDetail", {
-                        revenue: revenueNetPaid.toFixed(2),
-                        personnel: personnelCostTotal.toFixed(2),
-                        nonPersonnel: nonPersonnelCostTotal.toFixed(2),
+                        revenue: cashInTotal.toFixed(2),
+                        costs: cashOutTotal.toFixed(2),
                       })}
                     </p>
                     <p className="status">
@@ -7280,13 +7743,35 @@ export default function App() {
                 ) : (
                 <section className="panel wide">
                   <h2>{t("budget.projectsTitle")}</h2>
-                  <p className="status">{t("budget.projectsIntro")}</p>
-                  {openProjects.length === 0 ? (
+                  <p className="status">{t("project.pageIntro")}</p>
+                  <label htmlFor="projectSearch">{t("project.search")}</label>
+                  <input
+                    id="projectSearch"
+                    type="search"
+                    value={projectQuery}
+                    onChange={(e) => {
+                      setProjectQuery(e.target.value);
+                      setProjectPage(1);
+                    }}
+                    placeholder={t("project.searchPlaceholder")}
+                    autoComplete="off"
+                  />
+                  <p className="status muted">{t("project.searchHint")}</p>
+                  {projectSearchResults.length === 0 ? (
                     <p className="status">{t("project.runningEmpty")}</p>
                   ) : (
+                  <>
+                  <p className="status muted">
+                    {t("pagination.range", {
+                      from: (projectPage - 1) * 50 + 1,
+                      to: (projectPage - 1) * 50 + projectSearchResults.length,
+                      total: projectTotal,
+                    })}
+                  </p>
                   <ul className="entry-list">
-                    {openProjects.map((project) => {
+                    {projectSearchResults.map((project) => {
                       const stage = normalizeDialStage(project.funnel_status);
+                      const isClosed = stage === "closed";
                       const next = (project.next_funnel || []).map((s) =>
                         s === "finalizing" ? "delivered" : s,
                       );
@@ -7294,13 +7779,24 @@ export default function App() {
                       const hoursBookable = stage === "in_delivery";
                       const canReopenDelivery = next.includes("in_delivery") && stage === "delivered";
                       return (
-                      <li key={project.id}>
+                      <li
+                        key={project.id}
+                        className={stage === "ordered" ? "project-row-ordered" : undefined}
+                      >
                         <div className="project-list-item">
                           <div>
                             <strong>
                               {project.customer_name} · {project.name}
+                              {stage === "ordered" ? (
+                                <span className="ordered-pill"> · {t("project.funnel.ordered")}</span>
+                              ) : null}
+                              {isClosed ? (
+                                <span className="muted"> · {t("project.closedBadge")}</span>
+                              ) : null}
                             </strong>
                             <div className="muted">
+                              {project.service_id}
+                              {" · "}
                               {project.engagement_type === "tm"
                                 ? t("project.engagementTm")
                                 : t("project.engagementFixed")}
@@ -7321,7 +7817,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   className="primary"
-                                  onClick={() => void openKickoffPicker(project)}
+                                  onClick={() => void openKickoffPicker(project.id)}
                                 >
                                   {t("agenda.planKickoff")}
                                 </button>
@@ -7353,7 +7849,7 @@ export default function App() {
                                   {t("project.advanceTo", { stage: t(`project.funnel.${target}`) })}
                                 </button>
                               ))}
-                              <button type="button" onClick={() => startEditProject(project)}>
+                              <button type="button" onClick={() => void openProjectForEdit(project.id)}>
                                 {t("budget.edit")}
                               </button>
                             </div>
@@ -7364,6 +7860,23 @@ export default function App() {
                       );
                     })}
                   </ul>
+                  <div className="actions pagination-actions">
+                    <button
+                      type="button"
+                      disabled={projectPage <= 1}
+                      onClick={() => setProjectPage((p) => Math.max(1, p - 1))}
+                    >
+                      {t("pagination.prev")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!projectHasMore}
+                      onClick={() => setProjectPage((p) => p + 1)}
+                    >
+                      {t("pagination.next")}
+                    </button>
+                  </div>
+                  </>
                   )}
 
                   {kickoffPickerProjectId ? (
